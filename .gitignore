@@ -1,0 +1,5 @@
+cerberus
+*.o
+*.pyc
+*.tmp
+libs
