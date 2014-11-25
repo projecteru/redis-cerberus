@@ -59,6 +59,9 @@ namespace cerb {
         : public IOConnection
     {
         Proxy* const _proxy;
+
+        void _send_to();
+        void _recv_from();
     public:
         std::vector<Client*> clients;
         std::vector<Client*> ready_clients;
@@ -73,16 +76,22 @@ namespace cerb {
         void triggered(Proxy* p, int events);
 
         void push_client(Client* cli);
+        void pop_client(Client* cli);
     };
 
     class Client
         : public IOConnection
     {
+        void _send_to();
+        void _recv_from();
+
+        Proxy* const _proxy;
     public:
         Server* peer;
 
-        explicit Client(int fd)
+        Client(int fd, Proxy* p)
             : IOConnection(fd)
+            , _proxy(p)
             , peer(nullptr)
         {}
 
@@ -98,7 +107,13 @@ namespace cerb {
         Proxy();
         ~Proxy();
 
-        void run(Connection& listen_conn);
+        void run(int port);
+        void notify_each(std::vector<Client*> const& clients);
+
+        void accept_from(int listen_fd);
+        Server* connect_to(char const* host, int port);
+        void shut_client(Client* cli);
+        void shut_server(Server* svr);
     };
 
 }
