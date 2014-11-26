@@ -1,62 +1,36 @@
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <sys/epoll.h>
-#include <sys/sendfile.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <memory.h>
-#include <netdb.h>
-#include <netinet/tcp.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <fcntl.h>
-#include <errno.h> 
-#include <signal.h>
+#include <csignal>
+#include <vector>
 #include <algorithm>
 #include <iostream>
 
 #include "proxy.hpp"
 #include "concurrence.hpp"
 
-using cerb::Client;
-
 int const PORT = 8889;
 
-void exit_on_int(int s)
+void exit_on_int(int)
 {
-    fprintf(stderr, "Exit %d\n", s);
+    std::cout << "Keyboard Interrupted. Exit" << std::endl;
     exit(0);
-}
-
-char* copy_message(char* dst, char* src, char* src_end, int* size)
-{
-    *size = 0;
-    while (src != src_end && ++*size && ('\n' != (*(dst++) = *(src++))))
-        ;
-    return src;
-}
-
-int split_message(std::vector<Client*>& clients, char* message, char* message_end)
-{
-    int i;
-    for (i = 0; i < clients.size() && message != message_end; ++i) {
-        message = copy_message(clients[i]->buf, message, message_end, &clients[i]->write_size);
-    }
-    return i;
 }
 
 int main()
 {
     signal(SIGINT, exit_on_int);
-    cerb::ListenThread ta(PORT);
-    cerb::ListenThread tb(PORT);
-    ta.run();
-    tb.run();
+    std::vector<cerb::ListenThread> threads;
+    for (int i = 0; i < 4; ++i) {
+        threads.push_back(cerb::ListenThread(PORT));
+    }
+    std::for_each(threads.begin(), threads.end(),
+                  [](cerb::ListenThread& t)
+                  {
+                      t.run();
+                  });
     std::cout << "Started" << std::endl;
-    ta.join();
-    tb.join();
+    std::for_each(threads.begin(), threads.end(),
+                  [](cerb::ListenThread& t)
+                  {
+                      t.join();
+                  });
     return 0;
 }

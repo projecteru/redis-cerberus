@@ -18,6 +18,13 @@ namespace cerb {
             , _thread(nullptr)
         {}
 
+        ListenThread(ListenThread const&) = delete;
+
+        ListenThread(ListenThread&& rhs)
+            : _listen_port(rhs._listen_port)
+            , _thread(std::move(rhs._thread))
+        {}
+
         void run();
         void join();
     };

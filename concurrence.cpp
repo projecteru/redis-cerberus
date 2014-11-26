@@ -1,5 +1,3 @@
-#include <thread>
-
 #include "concurrence.hpp"
 
 using namespace cerb;
