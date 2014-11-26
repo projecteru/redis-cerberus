@@ -100,7 +100,8 @@ namespace cerb {
         void triggered(Proxy* p, int events);
     };
 
-    struct Proxy {
+    class Proxy {
+    public:
         int epfd;
         Server* server_conn;
 

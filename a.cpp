@@ -16,12 +16,12 @@
 #include <errno.h> 
 #include <signal.h>
 #include <algorithm>
+#include <iostream>
 
 #include "proxy.hpp"
+#include "concurrence.hpp"
 
-using cerb::Connection;
 using cerb::Client;
-using cerb::Server;
 
 int const PORT = 8889;
 
@@ -51,9 +51,12 @@ int split_message(std::vector<Client*>& clients, char* message, char* message_en
 int main()
 {
     signal(SIGINT, exit_on_int);
-
-    cerb::Proxy p;
-    p.run(PORT);
-
+    cerb::ListenThread ta(PORT);
+    cerb::ListenThread tb(PORT);
+    ta.run();
+    tb.run();
+    std::cout << "Started" << std::endl;
+    ta.join();
+    tb.join();
     return 0;
 }
