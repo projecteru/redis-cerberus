@@ -9,11 +9,12 @@
 #include <stdexcept>
 #include <algorithm>
 
+#include <iostream>
+
 #include "proxy.hpp"
+#include "message.hpp"
 
 using namespace cerb;
-
-int split_message(std::vector<Client*>& clients, char* message, char* message_end);
 
 namespace {
 
@@ -77,9 +78,7 @@ namespace {
             exit(EXIT_FAILURE);
         }
 
-        printf("Events incoming %d\n", nfds);
         for (int i = 0; i < nfds; ++i) {
-            printf("Index - %d\n", i);
             AutoReleaser<Connection> conn(
                 static_cast<Connection*>(events[i].data.ptr));
             conn->triggered(p, events[i].events);
@@ -87,10 +86,10 @@ namespace {
         }
     }
 
-    int read_from(int fd, char* buf)
+    int read_from(int fd, byte* buf, int offset)
     {
         int n = 0, nread;
-        while ((nread = read(fd, buf + n, BUFFER_SIZE - 1)) > 0) {
+        while ((nread = read(fd, buf + n + offset, BUFFER_SIZE - 1)) > 0) {
             n += nread;
         }
         if (nread == -1 && errno != EAGAIN) {
@@ -117,7 +116,7 @@ Server::~Server()
     _proxy->shut_server(this);
 }
 
-void Server::triggered(Proxy* p, int events)
+void Server::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
         delete this;
@@ -137,24 +136,23 @@ void Server::_send_to()
         return;
     }
     if (!this->ready_clients.empty()) {
-        printf(" Write in process %d\n", this->ready_clients.size());
         return;
     }
-    struct iovec iov[512];
-    int n = 0, nwrite, i;
 
-    this->ready_clients = this->clients;
-    for (i = 0; i < this->ready_clients.size(); ++i) {
-        printf(" Ready to write %d bytes from %d in %p\n", this->ready_clients[i]->write_size, this->ready_clients[i]->fd, this->ready_clients[i]);
-        iov[i].iov_base = this->ready_clients[i]->buf;
-        iov[i].iov_len = this->ready_clients[i]->write_size;
-        n += iov[i].iov_len;
-    }
-    this->clients.clear();
+    std::vector<struct iovec> iov;
+    int n = 0;
+
+    this->ready_clients = std::move(this->clients);
+    std::for_each(this->ready_clients.begin(), this->ready_clients.end(),
+                  [&](Client* cli)
+                  {
+                      struct iovec v = {cli->buf, size_t(cli->write_size)};
+                      iov.push_back(v);
+                      n += cli->write_size;
+                  });
 
     while (true) {
-        printf("+File descripter %d writing from %p, total %d bytes in %d elements\n", this->fd, this, n, this->ready_client_index);
-        nwrite = writev(this->fd, iov, this->ready_clients.size());
+        int nwrite = writev(this->fd, iov.data(), iov.size());
         if (nwrite <= 0 && errno == EAGAIN) {
             continue;
         }
@@ -173,27 +171,58 @@ void Server::_send_to()
     }
 }
 
+template <typename Iterator>
+static std::vector<Client*>::iterator copy_messages(
+    std::vector<Client*>::iterator client_it, Iterator range, Iterator last)
+{
+    for (; range != last; ++client_it, ++range)
+    {
+        if (nullptr == *client_it) {
+            continue;
+        }
+        (*client_it)->write_size = range.size();
+        std::copy(range.range_begin(), range.range_end(), (*client_it)->buf);
+    }
+    return client_it;
+}
+
 void Server::_recv_from()
 {
-    int i, n = read_from(this->fd, this->buf);
+    int n = read_from(this->fd, this->buf, this->_buffer_used);
     if (n == 0) {
         return;
     }
-    printf("-File descripter %d reading %d bytes from %p\n", this->fd, n, this);
-    this->buf[n] = 0;
-    printf("====\n%s\n===\n", this->buf);
-
-    int client_cnt = split_message(this->ready_clients, this->buf, this->buf + n);
-    if (client_cnt != this->ready_clients.size()) {
-        fprintf(stderr, " Error on split, actual %d. Original message\n%s\n\n", client_cnt, this->buf);
-        for (i = 0; i < client_cnt; ++i) {
-            fprintf(stderr, " + Client %d : <%d> %s\n", i, this->ready_clients[i]->write_size, this->ready_clients[i]->buf);
+    this->_buffer_used += n;
+    this->buf[this->_buffer_used] = 0;
+    try {
+        auto messages(msg::split(this->buf, this->buf + this->_buffer_used));
+        if (messages.size() > rint(this->ready_clients.size())) {
+            fprintf(stderr, " Error on split, expected %zu, actual %lld. Original message\n%s\n\n", this->ready_clients.size(), messages.size(), this->buf);
+            std::for_each(this->ready_clients.begin(), this->ready_clients.end(),
+                          [&](Client* cli)
+                          {
+                              fprintf(stderr, " + Client <%d> %s\n", cli->write_size, cli->buf);
+                          });
+            exit(1);
         }
+        auto client_it = copy_messages(this->ready_clients.begin(),
+                                       messages.begin(), messages.end());
+
+        _proxy->notify_each(this->ready_clients.begin(), client_it);
+        this->ready_clients.erase(this->ready_clients.begin(), client_it);
+        if (messages.finished()) {
+            this->_buffer_used = 0;
+        } else {
+            int len = std::distance(messages.interrupt_point(),
+                                    this->buf + this->_buffer_used);
+            std::copy(messages.interrupt_point(),
+                      this->buf + this->_buffer_used, this->buf);
+            this->_buffer_used = len;
+        }
+    } catch (BadRedisMessage& e) {
+        fprintf(stderr, "Bad message %d\n%s\n\n", n, this->buf);
         exit(1);
     }
-
-    _proxy->notify_each(this->ready_clients);
-    this->ready_clients.clear();
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
@@ -206,7 +235,6 @@ void Server::_recv_from()
 void Server::push_client(Client* cli)
 {
     clients.push_back(cli);
-    printf(" Add client %p, now %d\n", cli, svr->clients.size());
 }
 
 static void pop_client_from(std::vector<Client*>& clients, Client* cli)
@@ -223,9 +251,9 @@ static void pop_client_from(std::vector<Client*>& clients, Client* cli)
 
 void Server::pop_client(Client* cli)
 {
-    printf(" ^ %d %d\n", svr->ready_clients.size(), svr->clients.size());
-    pop_client_from(this->ready_clients, cli);
     pop_client_from(this->clients, cli);
+    std::replace(this->ready_clients.begin(), this->ready_clients.end(),
+                 cli, static_cast<Client*>(nullptr));
 }
 
 Client::~Client()
@@ -233,7 +261,7 @@ Client::~Client()
     this->_proxy->shut_client(this);
 }
 
-void Client::triggered(Proxy* p, int events)
+void Client::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
         delete this;
@@ -250,11 +278,11 @@ void Client::triggered(Proxy* p, int events)
 void Client::_send_to()
 {
     int n = this->write_size, nwrite;
-    printf("-File descripter %d writing from %p, %d bytes\n", this->fd, this, n);
     while (n > 0) {
         nwrite = write(this->fd, this->buf + this->write_size - n, n);
         if (nwrite < n) {
             if (nwrite == -1 && errno != EAGAIN) {
+                std::cerr << this->fd << ", " << this->write_size << std::endl;
                 perror("-write error");
                 exit(1);
             }
@@ -262,8 +290,7 @@ void Client::_send_to()
         }
         n -= nwrite;
     }
-    printf("Job finished %d on %p\n", this->fd, this);
-    this->write_size = -1;
+    this->write_size = 0;
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
@@ -278,7 +305,6 @@ void Client::_recv_from()
     int n = 0, nread;
     if (this->peer == nullptr) {
         this->peer = this->_proxy->connect_to("127.0.0.1", 6379);
-        printf("*Connect to %d in %p\n", this->peer->fd, this->peer);
     }
     Server* svr = this->peer;
     svr->push_client(this);
@@ -290,14 +316,12 @@ void Client::_recv_from()
         delete this;
         return;
     }
-    printf("+File descripter %d reading %d bytes from %p\n", this->fd, n, this);
     if (nread == -1 && errno != EAGAIN) {
         perror("read error");
         exit(1);
     }
     this->buf[n] = 0;
     this->write_size = n;
-    printf("Client recv =====\n%s\n===\n", this->buf);
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = svr;
@@ -363,19 +387,21 @@ void Proxy::run(int port)
     }
 }
 
-void Proxy::notify_each(std::vector<Client*> const& clients)
+void Proxy::notify_each(std::vector<Client*>::iterator begin,
+                        std::vector<Client*>::iterator end)
 {
-    int i;
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    std::for_each(clients.begin()
-                , clients.end()
-                , [&](Client* cli)
+    std::for_each(begin, end,
+                  [&](Client* cli)
                   {
+                      if (cli == nullptr) {
+                          return;
+                      }
                       cli->buf[cli->write_size] = 0;
-                      printf(" - Client <%d> %s\n", cli->write_size, cli->buf);
                       ev.data.ptr = cli;
                       if (epoll_ctl(this->epfd, EPOLL_CTL_MOD, cli->fd, &ev) == -1) {
+                          std::cerr << this->epfd << ", " << cli->fd << std::endl;
                           perror("epoll_ctl: mod output (r)");
                           exit(1);
                       }
@@ -436,18 +462,15 @@ void Proxy::accept_from(int listen_fd)
     int conn_sock;
     struct sockaddr_in remote;
     socklen_t addrlen = sizeof remote;
-    printf("Listen FD\n");
     while ((conn_sock = accept(listen_fd, (struct sockaddr*)&remote,
                                &addrlen)) > 0)
     {
-        printf("Accepted %d\n", conn_sock);
         set_nonblocking(conn_sock);
         set_tcpnodelay(conn_sock);
         Connection* c = new Client(conn_sock, this);
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
         ev.data.ptr = c;
-        printf("Create binder %p\n", c);
         if (epoll_ctl(this->epfd, EPOLL_CTL_ADD, conn_sock, &ev) == -1) {
             perror("epoll_ctl: add");
             exit(EXIT_FAILURE);
@@ -468,9 +491,10 @@ void Proxy::shut_client(Client* cli)
     if (this->server_conn != nullptr) {
         this->server_conn->pop_client(cli);
     }
+    epoll_ctl(this->epfd, EPOLL_CTL_DEL, cli->fd, NULL);
 }
 
-void Proxy::shut_server(Server* svr)
+void Proxy::shut_server(Server*)
 {
     this->server_conn = nullptr;
 }

@@ -3,14 +3,9 @@
 
 #include <vector>
 
-#define LOGGING_OFF 1
+#include "common.hpp"
 
-#if LOGGING_OFF
-#define printf(...) \
-    do {} while(0)
-#endif
-
-int const BUFFER_SIZE = 512 * 1024;
+int const BUFFER_SIZE = 2 * 1024 * 1024;
 
 namespace cerb {
 
@@ -40,25 +35,26 @@ namespace cerb {
         void triggered(Proxy* p, int events);
     };
 
-    class Client;
-
     class IOConnection
         : public Connection
     {
     public:
         int write_size;
-        char buf[BUFFER_SIZE];
+        byte buf[BUFFER_SIZE];
 
         explicit IOConnection(int fd)
             : Connection(fd)
-            , write_size(-1)
+            , write_size(0)
         {}
     };
+
+    class Client;
 
     class Server
         : public IOConnection
     {
         Proxy* const _proxy;
+        int _buffer_used;
 
         void _send_to();
         void _recv_from();
@@ -69,6 +65,7 @@ namespace cerb {
         Server(int fd, Proxy* p)
             : IOConnection(fd)
             , _proxy(p)
+            , _buffer_used(0)
         {}
 
         ~Server();
@@ -100,7 +97,8 @@ namespace cerb {
         void triggered(Proxy* p, int events);
     };
 
-    struct Proxy {
+    class Proxy {
+    public:
         int epfd;
         Server* server_conn;
 
@@ -108,7 +106,8 @@ namespace cerb {
         ~Proxy();
 
         void run(int port);
-        void notify_each(std::vector<Client*> const& clients);
+        void notify_each(std::vector<Client*>::iterator begin,
+                         std::vector<Client*>::iterator end);
 
         void accept_from(int listen_fd);
         Server* connect_to(char const* host, int port);
