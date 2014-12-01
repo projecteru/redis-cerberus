@@ -7,7 +7,7 @@ all:a.d objs
 	        $(LIBS) \
 	     -o cerberus
 
-objs:concurrence.d proxy.d exceptions.d
+objs:concurrence.d buffer.d proxy.d exceptions.d
 	true
 
 runtest:objs

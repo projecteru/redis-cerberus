@@ -14,6 +14,15 @@ namespace cerb {
         explicit BadRedisMessage(byte token);
     };
 
+    class IOError
+        : public std::runtime_error
+    {
+    public:
+        int const errcode;
+
+        IOError(std::string const& what, int errcode);
+    };
+
 }
 
 #endif /* __CERBERUS_EXCEPTIONS_HPP__ */

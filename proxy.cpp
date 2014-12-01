@@ -1,15 +1,10 @@
 #include <cstring>
 #include <unistd.h>
 #include <fcntl.h>
-#include <strings.h>
 #include <netdb.h>
-#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
-#include <stdexcept>
 #include <algorithm>
-
-#include <iostream>
 
 #include "proxy.hpp"
 #include "message.hpp"
@@ -86,19 +81,6 @@ namespace {
         }
     }
 
-    int read_from(int fd, byte* buf, int offset)
-    {
-        int n = 0, nread;
-        while ((nread = read(fd, buf + n + offset, BUFFER_SIZE - 1)) > 0) {
-            n += nread;
-        }
-        if (nread == -1 && errno != EAGAIN) {
-            perror("read error");
-            exit(1);
-        }
-        return n;
-    }
-
 }
 
 Connection::~Connection()
@@ -146,9 +128,8 @@ void Server::_send_to()
     std::for_each(this->ready_clients.begin(), this->ready_clients.end(),
                   [&](Client* cli)
                   {
-                      struct iovec v = {cli->buf, size_t(cli->write_size)};
-                      iov.push_back(v);
-                      n += cli->write_size;
+                      cli->buffer.buffer_ready(iov);
+                      n += cli->buffer.size();
                   });
 
     while (true) {
@@ -180,28 +161,25 @@ static std::vector<Client*>::iterator copy_messages(
         if (nullptr == *client_it) {
             continue;
         }
-        (*client_it)->write_size = range.size();
-        std::copy(range.range_begin(), range.range_end(), (*client_it)->buf);
+        (*client_it)->buffer.copy_from(range.range_begin(), range.range_end());
     }
     return client_it;
 }
 
 void Server::_recv_from()
 {
-    int n = read_from(this->fd, this->buf, this->_buffer_used);
+    int n = this->_buffer.read(this->fd);
     if (n == 0) {
         return;
     }
-    this->_buffer_used += n;
-    this->buf[this->_buffer_used] = 0;
     try {
-        auto messages(msg::split(this->buf, this->buf + this->_buffer_used));
+        auto messages(msg::split(this->_buffer.begin(), this->_buffer.end()));
         if (messages.size() > rint(this->ready_clients.size())) {
-            fprintf(stderr, " Error on split, expected %zu, actual %lld. Original message\n%s\n\n", this->ready_clients.size(), messages.size(), this->buf);
+            fprintf(stderr, " Error on split, expected %zu, actual %lld. Original message\n%s\n\n", this->ready_clients.size(), messages.size(), this->_buffer.to_string().c_str());
             std::for_each(this->ready_clients.begin(), this->ready_clients.end(),
                           [&](Client* cli)
                           {
-                              fprintf(stderr, " + Client <%d> %s\n", cli->write_size, cli->buf);
+                              fprintf(stderr, " + Client <%lu> %s\n", cli->buffer.size(), cli->buffer.to_string().c_str());
                           });
             exit(1);
         }
@@ -211,16 +189,12 @@ void Server::_recv_from()
         _proxy->notify_each(this->ready_clients.begin(), client_it);
         this->ready_clients.erase(this->ready_clients.begin(), client_it);
         if (messages.finished()) {
-            this->_buffer_used = 0;
+            this->_buffer.clear();
         } else {
-            int len = std::distance(messages.interrupt_point(),
-                                    this->buf + this->_buffer_used);
-            std::copy(messages.interrupt_point(),
-                      this->buf + this->_buffer_used, this->buf);
-            this->_buffer_used = len;
+            this->_buffer.truncate_from_begin(messages.interrupt_point());
         }
     } catch (BadRedisMessage& e) {
-        fprintf(stderr, "Bad message %d\n%s\n\n", n, this->buf);
+        fprintf(stderr, "Bad message %d\n%s\n\n", n, this->_buffer.to_string().c_str());
         exit(1);
     }
     struct epoll_event ev;
@@ -277,20 +251,8 @@ void Client::triggered(Proxy*, int events)
 
 void Client::_send_to()
 {
-    int n = this->write_size, nwrite;
-    while (n > 0) {
-        nwrite = write(this->fd, this->buf + this->write_size - n, n);
-        if (nwrite < n) {
-            if (nwrite == -1 && errno != EAGAIN) {
-                std::cerr << this->fd << ", " << this->write_size << std::endl;
-                perror("-write error");
-                exit(1);
-            }
-            break;
-        }
-        n -= nwrite;
-    }
-    this->write_size = 0;
+    this->buffer.write(this->fd);
+    this->buffer.clear();
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
@@ -302,26 +264,17 @@ void Client::_send_to()
 
 void Client::_recv_from()
 {
-    int n = 0, nread;
     if (this->peer == nullptr) {
         this->peer = this->_proxy->connect_to("127.0.0.1", 6379);
     }
     Server* svr = this->peer;
     svr->push_client(this);
 
-    while ((nread = read(this->fd, this->buf + n, BUFFER_SIZE - 1)) > 0) {
-        n += nread;
-    }
+    int n = this->buffer.read(this->fd);
     if (n == 0) {
         delete this;
         return;
     }
-    if (nread == -1 && errno != EAGAIN) {
-        perror("read error");
-        exit(1);
-    }
-    this->buf[n] = 0;
-    this->write_size = n;
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = svr;
@@ -398,10 +351,8 @@ void Proxy::notify_each(std::vector<Client*>::iterator begin,
                       if (cli == nullptr) {
                           return;
                       }
-                      cli->buf[cli->write_size] = 0;
                       ev.data.ptr = cli;
                       if (epoll_ctl(this->epfd, EPOLL_CTL_MOD, cli->fd, &ev) == -1) {
-                          std::cerr << this->epfd << ", " << cli->fd << std::endl;
                           perror("epoll_ctl: mod output (r)");
                           exit(1);
                       }
