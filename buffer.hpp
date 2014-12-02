@@ -26,6 +26,10 @@ namespace cerb {
             : _buffer(std::move(rhs._buffer))
         {}
 
+        Buffer(iterator first, iterator last)
+            : _buffer(first, last)
+        {}
+
         iterator begin()
         {
             return _buffer.begin();

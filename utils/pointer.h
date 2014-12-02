@@ -86,6 +86,11 @@ namespace util {
         {
             return *_ptr;
         }
+
+        void reset()
+        {
+            _ptr = nullptr;
+        }
     private:
         pointer _ptr;
 
