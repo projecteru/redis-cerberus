@@ -85,18 +85,13 @@ namespace {
 
 Connection::~Connection()
 {
+    // printf("*Shut %d\n", fd);
     close(fd);
 }
 
 void Acceptor::triggered(Proxy* p, int)
 {
     p->accept_from(this->fd);
-}
-
-void ClientCommand::copy_response(Buffer::iterator begin, Buffer::iterator end)
-{
-    this->response.copy_from(begin, end);
-    this->client->command_responsed();
 }
 
 Server::~Server()
@@ -124,6 +119,7 @@ void Server::_send_to()
         return;
     }
     if (!this->_ready_commands.empty()) {
+        // printf("+busy commands\n");
         return;
     }
 
@@ -132,11 +128,12 @@ void Server::_send_to()
 
     this->_ready_commands = std::move(this->_commands);
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sref<ClientCommand>& cmd)
+                  [&](util::sref<Command>& cmd)
                   {
-                      cmd->response.buffer_ready(iov);
-                      n += cmd->response.size();
+                      cmd->buffer.buffer_ready(iov);
+                      n += cmd->buffer.size();
                   });
+    // printf("+write %d (%d)\n", n, this->fd);
 
     while (true) {
         int nwrite = writev(this->fd, iov.data(), iov.size());
@@ -161,17 +158,19 @@ void Server::_send_to()
 void Server::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
+    // printf("+ read %d (%d)\n", n, this->fd);
     if (n == 0) {
         return;
     }
     try {
         auto messages(msg::split(this->_buffer.begin(), this->_buffer.end()));
+        // printf("+msize %lld (%d) %c\n", messages.size(), this->fd, messages.size() == 0 ? 'X' : 'O');
         if (messages.size() > rint(this->_ready_commands.size())) {
             fprintf(stderr, " Error on split, expected %zu, actual %lld. Original message\n%s\n\n", this->_ready_commands.size(), messages.size(), this->_buffer.to_string().c_str());
             std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                          [&](util::sref<ClientCommand> cmd)
+                          [&](util::sref<Command> cmd)
                           {
-                              fprintf(stderr, " + Client <%lu> %s\n", cmd->response.size(), cmd->response.to_string().c_str());
+                              fprintf(stderr, " + Client <%lu> %s\n", cmd->buffer.size(), cmd->buffer.to_string().c_str());
                           });
             exit(1);
         }
@@ -204,7 +203,7 @@ void Server::_recv_from()
     }
 }
 
-void Server::push_client_command(util::sref<ClientCommand> cmd)
+void Server::push_client_command(util::sref<Command> cmd)
 {
     _commands.push_back(cmd);
 }
@@ -212,14 +211,14 @@ void Server::push_client_command(util::sref<ClientCommand> cmd)
 void Server::pop_client(Client* cli)
 {
     std::remove_if(this->_commands.begin(), this->_commands.end(),
-                   [&](util::sref<ClientCommand>& cmd)
+                   [&](util::sref<Command>& cmd)
                    {
-                       return cmd->client == cli;
+                       return cmd->client.is(cli);
                    });
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sref<ClientCommand>& cmd)
+                  [&](util::sref<Command>& cmd)
                   {
-                      if (cmd->client == cli) {
+                      if (cmd->client.is(cli)) {
                           cmd.reset();
                       }
                   });
@@ -256,6 +255,7 @@ void Client::_send_to()
         return;
     }
     if (!this->_ready_commands.empty()) {
+        // printf("+busy commands\n");
         return;
     }
 
@@ -264,12 +264,13 @@ void Client::_send_to()
 
     this->_ready_commands = std::move(this->_awaiting_commands);
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sptr<ClientCommand>& cmd)
+                  [&](util::sptr<Command>& cmd)
                   {
-                      cmd->response.buffer_ready(iov);
-                      n += cmd->response.size();
+                      cmd->buffer.buffer_ready(iov);
+                      n += cmd->buffer.size();
                   });
 
+    // printf("-write %d (%d)\n", n, this->fd);
     while (true) {
         int nwrite = writev(this->fd, iov.data(), iov.size());
         if (nwrite <= 0 && errno == EAGAIN) {
@@ -295,25 +296,21 @@ void Client::_send_to()
 void Client::_recv_from()
 {
     int n = this->buffer.read(this->fd);
+    // printf("- read %d (%d)\n", n, this->fd);
     if (n == 0) {
         delete this;
         return;
     }
 
-    auto messages(msg::split(this->buffer.begin(), this->buffer.end()));
-    if (!messages.finished()) {
-        fprintf(stderr, " + Incomplete message %lu\n%s\n\nShut Client <%d>", this->buffer.size(), this->buffer.to_string().c_str(), this->fd);
-        delete this;
-        return;
-    }
+    auto messages(split_client_command(this->buffer, util::mkref(*this)));
+    // printf("-msize %zu (%d)\n", messages.size(), this->fd);
 
     if (this->peer == nullptr) {
         this->peer = this->_proxy->connect_to("127.0.0.1", 6379);
     }
     Server* svr = this->peer;
-    for (auto range(messages.begin()); range != messages.end(); ++range) {
-        util::sptr<ClientCommand> c(new ClientCommand(
-            this, range.range_begin(), range.range_end()));
+    for (auto i = messages.begin(); i != messages.end(); ++i) {
+        util::sptr<Command> c(std::move(*i));
         svr->push_client_command(*c);
         _awaiting_commands.push_back(std::move(c));
         ++_awaiting_responses;
@@ -340,6 +337,7 @@ void Client::command_responsed()
             exit(1);
         }
     }
+    // printf("-await %d (%d) %c\n", _awaiting_responses, this->fd, _awaiting_responses == 0 ? 'O' : 'X');
 }
 
 Proxy::Proxy()
@@ -455,6 +453,7 @@ void Proxy::accept_from(int listen_fd)
     while ((conn_sock = accept(listen_fd, (struct sockaddr*)&remote,
                                &addrlen)) > 0)
     {
+        // printf("*Accepted %d\n", conn_sock);
         set_nonblocking(conn_sock);
         set_tcpnodelay(conn_sock);
         Connection* c = new Client(conn_sock, this);

@@ -16,6 +16,10 @@ BadRedisMessage::BadRedisMessage(byte token)
     : std::runtime_error(format_byte_in(token))
 {}
 
+BadRedisMessage::BadRedisMessage(std::string const& what)
+    : std::runtime_error(what)
+{}
+
 static std::string error_message(int errcode)
 {
     char message[256];

@@ -70,10 +70,12 @@ namespace cerb { namespace msg {
     InputIterator parse_str(
         rint size, InputIterator begin, InputIterator end, F f)
     {
-        size += 2; /* length of \r\n */
         for (; 0 < size && begin != end; ++begin, --size) {
             f(*begin);
         }
+        /* length of \r\n */
+        for (size = 2; 0 < size && begin != end; ++begin, --size)
+            ;
         if (size != 0) {
             throw MessageInterrupted();
         }
@@ -137,13 +139,19 @@ namespace cerb { namespace msg {
         }
     }
 
-    template <typename InputIterator>
-    class BulkMessageSplitter {
+    template <typename InputIterator, typename FinalType>
+    class MessageSplitterBase {
+    protected:
         bool _interrupted;
         std::vector<InputIterator> _split_points;
         std::stack<rint> _nested_array_element_count;
 
-        void _on_element(InputIterator next)
+        void on_arr_end(InputIterator next)
+        {
+            static_cast<FinalType*>(this)->on_element(next);
+        }
+
+        void on_element(InputIterator next)
         {
             if (_nested_array_element_count.size() == 0) {
                 _split_points.push_back(next);
@@ -152,25 +160,25 @@ namespace cerb { namespace msg {
             _nested_array_element_count.top() -= 1;
             if (_nested_array_element_count.top() == 0) {
                 _nested_array_element_count.pop();
-                _on_element(next);
+                static_cast<FinalType*>(this)->on_arr_end(next);
             }
         }
-    public:
-        explicit BulkMessageSplitter(InputIterator begin)
+
+        explicit MessageSplitterBase(InputIterator begin)
             : _interrupted(false)
         {
             _split_points.push_back(begin);
         }
 
-        BulkMessageSplitter(BulkMessageSplitter const&) = delete;
+        MessageSplitterBase(MessageSplitterBase const&) = delete;
 
-        BulkMessageSplitter(BulkMessageSplitter&& rhs)
+        MessageSplitterBase(MessageSplitterBase&& rhs)
             : _interrupted(rhs._interrupted)
             , _split_points(std::move(rhs._split_points))
             , _nested_array_element_count(
                 std::move(rhs._nested_array_element_count))
         {}
-
+    public:
         void interrupt()
         {
             _interrupted = true;
@@ -178,28 +186,38 @@ namespace cerb { namespace msg {
 
         InputIterator on_int(rint, InputIterator next)
         {
-            _on_element(next);
+            static_cast<FinalType*>(this)->on_element(next);
             return next;
         }
 
         InputIterator on_sstr(InputIterator begin, InputIterator end)
         {
-            auto next = parse_simple_str(begin, end, [](byte) {});
-            _on_element(next);
+            auto next = parse_simple_str(
+                begin, end,
+                [&](byte b)
+                {
+                    static_cast<FinalType*>(this)->on_byte(b);
+                });
+            static_cast<FinalType*>(this)->on_element(next);
             return next;
         }
 
         InputIterator on_str(rint size, InputIterator begin, InputIterator end)
         {
-            begin = parse_str(size, begin, end, [](byte) {});
-            _on_element(begin);
+            begin = parse_str(
+                size, begin, end,
+                [&](byte b)
+                {
+                    static_cast<FinalType*>(this)->on_byte(b);
+                });
+            static_cast<FinalType*>(this)->on_element(begin);
             return begin;
         }
 
         void on_arr(rint size, InputIterator next)
         {
             if (size == 0) {
-                _on_element(next);
+                static_cast<FinalType*>(this)->on_element(next);
             } else {
                 _nested_array_element_count.push(size);
             }
@@ -207,14 +225,19 @@ namespace cerb { namespace msg {
 
         InputIterator on_nil(InputIterator next)
         {
-            _on_element(next);
+            static_cast<FinalType*>(this)->on_element(next);
             return next;
         }
 
         InputIterator on_err(InputIterator begin, InputIterator end)
         {
-            auto next = parse_simple_str(begin, end, [](byte) {});
-            _on_element(next);
+            auto next = parse_simple_str(
+                begin, end,
+                [&](byte b)
+                {
+                    static_cast<FinalType*>(this)->on_byte(b);
+                });
+            static_cast<FinalType*>(this)->on_element(next);
             return next;
         }
 
@@ -295,11 +318,9 @@ namespace cerb { namespace msg {
         }
     };
 
-    template <typename InputIterator>
-    BulkMessageSplitter<InputIterator> split(
-        InputIterator begin, InputIterator end)
+    template <typename InputIterator, typename Splitter>
+    Splitter split_by(InputIterator begin, InputIterator end, Splitter s)
     {
-        BulkMessageSplitter<InputIterator> s(begin);
         try {
             while (begin != end) {
                 begin = parse(begin, end, s);
@@ -308,6 +329,28 @@ namespace cerb { namespace msg {
             s.interrupt();
         }
         return std::move(s);
+    }
+
+    template <typename InputIterator>
+    class MessageSplitter
+        : public MessageSplitterBase<InputIterator,
+                                     MessageSplitter<InputIterator>>
+    {
+        typedef MessageSplitterBase<InputIterator, MessageSplitter> BaseType;
+    public:
+        typedef typename BaseType::iterator iterator;
+
+        explicit MessageSplitter(InputIterator i)
+            : BaseType(i)
+        {}
+
+        void on_byte(byte) {}
+    };
+
+    template <typename InputIterator>
+    MessageSplitter<InputIterator> split(InputIterator begin, InputIterator end)
+    {
+        return split_by(begin, end, MessageSplitter<InputIterator>(begin));
     }
 
 } }

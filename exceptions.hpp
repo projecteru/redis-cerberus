@@ -12,6 +12,7 @@ namespace cerb {
     {
     public:
         explicit BadRedisMessage(byte token);
+        explicit BadRedisMessage(std::string const& what);
     };
 
     class IOError
