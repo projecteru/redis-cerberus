@@ -71,9 +71,9 @@ namespace cerb {
         void _recv_from();
 
         Proxy* const _proxy;
-        std::vector<util::sptr<Command>> _awaiting_commands;
-        std::vector<util::sptr<Command>> _ready_commands;
-        int _awaiting_responses;
+        std::vector<util::sptr<CommandGroup>> _awaiting_groups;
+        std::vector<util::sptr<CommandGroup>> _ready_groups;
+        int _awaiting_count;
 
         void _response_ready();
     public:
@@ -83,14 +83,14 @@ namespace cerb {
         Client(int fd, Proxy* p)
             : Connection(fd)
             , _proxy(p)
-            , _awaiting_responses(0)
+            , _awaiting_count(0)
             , peer(nullptr)
         {}
 
         ~Client();
 
         void triggered(Proxy* p, int events);
-        void command_responsed();
+        void group_responsed();
     };
 
     class Proxy {

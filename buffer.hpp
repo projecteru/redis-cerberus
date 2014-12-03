@@ -32,6 +32,12 @@ namespace cerb {
             : _buffer(first, last)
         {}
 
+        Buffer& operator=(Buffer&& rhs)
+        {
+            _buffer = std::move(rhs._buffer);
+            return *this;
+        }
+
         iterator begin()
         {
             return _buffer.begin();
@@ -67,6 +73,7 @@ namespace cerb {
         void truncate_from_begin(iterator i);
         void buffer_ready(std::vector<struct iovec>& iov);
         void copy_from(const_iterator first, const_iterator last);
+        void append_from(const_iterator first, const_iterator last);
 
         std::string to_string() const;
     };

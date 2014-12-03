@@ -10,7 +10,7 @@ ifndef COMPILER
 	COMPILER=clang++
 endif
 
-CC=$(COMPILER) -c -std=c++0x
+CC=$(COMPILER) -c -std=c++0x -D_XOPEN_SOURCE
 INCLUDE=-I.
 RESOLVE_DEP=$(COMPILER) -std=c++0x -MM $(INCLUDE)
 LINK=$(COMPILER) $(DYN_LINK)

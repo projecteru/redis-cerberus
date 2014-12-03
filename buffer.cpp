@@ -54,17 +54,24 @@ void Buffer::truncate_from_begin(iterator i)
 
 void Buffer::buffer_ready(std::vector<struct iovec>& iov)
 {
-    struct iovec v = {_buffer.data(), size_t(_buffer.size())};
-    iov.push_back(v);
+    if (!_buffer.empty()) {
+        struct iovec v = {_buffer.data(), size_t(_buffer.size())};
+        iov.push_back(v);
+    }
 }
 
 void Buffer::copy_from(const_iterator first, const_iterator last)
 {
     _buffer.clear();
+    append_from(first, last);
+}
+
+void Buffer::append_from(const_iterator first, const_iterator last)
+{
     _buffer.insert(_buffer.end(), first, last);
 }
 
 std::string Buffer::to_string() const
 {
-    return std::string((char const*)(_buffer.data()));
+    return std::string((char const*)(_buffer.data()), size());
 }

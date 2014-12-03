@@ -1,4 +1,5 @@
 #include <cstring>
+#include <climits>
 #include <unistd.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -124,7 +125,7 @@ void Server::_send_to()
     }
 
     std::vector<struct iovec> iov;
-    int n = 0;
+    int n = 0, ntotal = 0, written_iov = 0;
 
     this->_ready_commands = std::move(this->_commands);
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
@@ -133,19 +134,31 @@ void Server::_send_to()
                       cmd->buffer.buffer_ready(iov);
                       n += cmd->buffer.size();
                   });
-    // printf("+write %d (%d)\n", n, this->fd);
+//    printf("+write %d in %lu vectors (%d)\n", n, iov.size(), this->fd);
+    int rest_iov = iov.size();
 
-    while (true) {
-        int nwrite = writev(this->fd, iov.data(), iov.size());
-        if (nwrite <= 0 && errno == EAGAIN) {
-            continue;
-        }
-        if (nwrite != n) {
+    while (written_iov < int(iov.size())) {
+        int iovcnt = std::min(rest_iov, IOV_MAX);
+//        printf("+ * write %d vectors (%d)\n", iovcnt, this->fd);
+        int nwrite = writev(this->fd, iov.data() + written_iov, iovcnt);
+        if (nwrite < 0) {
+            if (errno == EAGAIN) {
+                continue;
+            }
             perror("+writev error");
             exit(1);
         }
-        break;
+        ntotal += nwrite;
+        rest_iov -= iovcnt;
+        written_iov += iovcnt;
     }
+
+    if (ntotal != n) {
+        perror("+writev error (but could recover)");
+        fprintf(stderr, "  need to write %d but write %d\n", n, ntotal);
+        exit(1);
+    }
+
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
@@ -213,12 +226,12 @@ void Server::pop_client(Client* cli)
     std::remove_if(this->_commands.begin(), this->_commands.end(),
                    [&](util::sref<Command>& cmd)
                    {
-                       return cmd->client.is(cli);
+                       return cmd->group->client.is(cli);
                    });
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
                   [&](util::sref<Command>& cmd)
                   {
-                      if (cmd->client.is(cli)) {
+                      if (cmd->group->client.is(cli)) {
                           cmd.reset();
                       }
                   });
@@ -251,10 +264,10 @@ void Client::triggered(Proxy*, int events)
 
 void Client::_send_to()
 {
-    if (this->_awaiting_commands.empty()) {
+    if (this->_awaiting_groups.empty()) {
         return;
     }
-    if (!this->_ready_commands.empty()) {
+    if (!this->_ready_groups.empty()) {
         // printf("+busy commands\n");
         return;
     }
@@ -262,12 +275,12 @@ void Client::_send_to()
     std::vector<struct iovec> iov;
     int n = 0;
 
-    this->_ready_commands = std::move(this->_awaiting_commands);
-    std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sptr<Command>& cmd)
+    this->_ready_groups = std::move(this->_awaiting_groups);
+    std::for_each(this->_ready_groups.begin(), this->_ready_groups.end(),
+                  [&](util::sptr<CommandGroup>& g)
                   {
-                      cmd->buffer.buffer_ready(iov);
-                      n += cmd->buffer.size();
+                      g->append_buffer_to(iov);
+                      n += g->total_buffer_size();
                   });
 
     // printf("-write %d (%d)\n", n, this->fd);
@@ -277,12 +290,12 @@ void Client::_send_to()
             continue;
         }
         if (nwrite != n) {
-            perror("-writev error");
+            perror("-writev error (but should recover)");
             exit(1);
         }
         break;
     }
-    this->_ready_commands.clear();
+    this->_ready_groups.clear();
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
@@ -310,18 +323,20 @@ void Client::_recv_from()
     }
     Server* svr = this->peer;
     for (auto i = messages.begin(); i != messages.end(); ++i) {
-        util::sptr<Command> c(std::move(*i));
-        // printf("-awaiting inc %d %s\n", c->need_send, c->buffer.to_string().c_str());
-        if (c->need_send) {
-            svr->push_client_command(*c);
-            ++_awaiting_responses;
+        util::sptr<CommandGroup> g(std::move(*i));
+        if (g->awaiting_count != 0) {
+            // printf("-awaiting inc %d\n", g->awaiting_count);
+            ++_awaiting_count;
+            for (auto ci = g->commands.begin(); ci != g->commands.end(); ++ci) {
+                svr->push_client_command(**ci);
+                // printf(" to send %s\n", (*ci)->buffer.to_string().c_str());
+            }
         }
-        _awaiting_commands.push_back(std::move(c));
+        _awaiting_groups.push_back(std::move(g));
     }
     this->buffer.clear();
-
-    // printf("-awaiting %d\n", _awaiting_responses);
-    if (0 < _awaiting_responses) {
+    // printf("-awaiting %d\n", _awaiting_count);
+    if (0 < _awaiting_count) {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
         ev.data.ptr = svr;
@@ -345,12 +360,12 @@ void Client::_response_ready()
     }
 }
 
-void Client::command_responsed()
+void Client::group_responsed()
 {
-    if (--_awaiting_responses == 0) {
+    if (--_awaiting_count == 0) {
         _response_ready();
     }
-    // printf("-await %d (%d) %c\n", _awaiting_responses, this->fd, _awaiting_responses == 0 ? 'O' : 'X');
+    // printf("-await %d (%d) %c\n", _awaiting_count, this->fd, _awaiting_count == 0 ? 'O' : 'X');
 }
 
 Proxy::Proxy()
