@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <sys/uio.h>
+#include <algorithm>
 
 #include "buffer.hpp"
 #include "exceptions.hpp"
@@ -7,6 +8,17 @@
 using namespace cerb;
 
 int const BUFFER_SIZE = 16 * 1024;
+
+Buffer Buffer::from_string(std::string const& s)
+{
+    Buffer b;
+    std::for_each(s.begin(), s.end(),
+                  [&](char ch)
+                  {
+                      b._buffer.push_back(byte(ch));
+                  });
+    return std::move(b);
+}
 
 int Buffer::read(int fd)
 {

@@ -74,6 +74,8 @@ namespace cerb {
         std::vector<util::sptr<Command>> _awaiting_commands;
         std::vector<util::sptr<Command>> _ready_commands;
         int _awaiting_responses;
+
+        void _response_ready();
     public:
         Buffer buffer;
         Server* peer;

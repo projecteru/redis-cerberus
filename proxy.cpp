@@ -311,17 +311,36 @@ void Client::_recv_from()
     Server* svr = this->peer;
     for (auto i = messages.begin(); i != messages.end(); ++i) {
         util::sptr<Command> c(std::move(*i));
-        svr->push_client_command(*c);
+        // printf("-awaiting inc %d %s\n", c->need_send, c->buffer.to_string().c_str());
+        if (c->need_send) {
+            svr->push_client_command(*c);
+            ++_awaiting_responses;
+        }
         _awaiting_commands.push_back(std::move(c));
-        ++_awaiting_responses;
     }
     this->buffer.clear();
 
+    // printf("-awaiting %d\n", _awaiting_responses);
+    if (0 < _awaiting_responses) {
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+        ev.data.ptr = svr;
+        if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, svr->fd, &ev) == -1) {
+            perror("epoll_ctl: mod output");
+            exit(1);
+        }
+    } else {
+        _response_ready();
+    }
+}
+
+void Client::_response_ready()
+{
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    ev.data.ptr = svr;
-    if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, svr->fd, &ev) == -1) {
-        perror("epoll_ctl: mod output");
+    ev.data.ptr = this;
+    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
+        perror("epoll_ctl: mod (w#)");
         exit(1);
     }
 }
@@ -329,13 +348,7 @@ void Client::_recv_from()
 void Client::command_responsed()
 {
     if (--_awaiting_responses == 0) {
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-        ev.data.ptr = this;
-        if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-            perror("epoll_ctl: mod (w#)");
-            exit(1);
-        }
+        _response_ready();
     }
     // printf("-await %d (%d) %c\n", _awaiting_responses, this->fd, _awaiting_responses == 0 ? 'O' : 'X');
 }

@@ -20,6 +20,8 @@ namespace cerb {
 
         Buffer() {}
 
+        static Buffer from_string(std::string const& s);
+
         Buffer(Buffer const&) = delete;
 
         Buffer(Buffer&& rhs)
