@@ -24,6 +24,15 @@ namespace cerb {
         IOError(std::string const& what, int errcode);
     };
 
+    class SocketCreateError
+        : public IOError
+    {
+    public:
+        SocketCreateError(std::string const& what, int errcode)
+            : IOError(what, errcode)
+        {}
+    };
+
 }
 
 #endif /* __CERBERUS_EXCEPTIONS_HPP__ */

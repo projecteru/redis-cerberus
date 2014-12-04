@@ -15,19 +15,22 @@ namespace cerb {
     class CommandGroup;
 
     class Command {
+        static slot const SLOT_MASK = 0x3FFF;
     public:
         Buffer buffer;
         util::sref<CommandGroup> group;
         bool need_send;
+        slot const key_slot;
 
         virtual ~Command() {}
 
         void copy_response(Buffer::iterator begin, Buffer::iterator end);
 
-        Command(Buffer b, util::sref<CommandGroup> g, bool n)
+        Command(Buffer b, util::sref<CommandGroup> g, bool n, slot ks)
             : buffer(std::move(b))
             , group(g)
             , need_send(n)
+            , key_slot(ks & SLOT_MASK)
         {}
 
         Command(Command const&) = delete;
@@ -47,10 +50,12 @@ namespace cerb {
             , awaiting_count(0)
         {}
 
+        virtual ~CommandGroup() {}
+
         void command_responsed();
         void append_command(util::sptr<Command> c);
-        void append_buffer_to(std::vector<struct iovec>& iov);
-        int total_buffer_size() const;
+        virtual void append_buffer_to(std::vector<struct iovec>& iov);
+        virtual int total_buffer_size() const;
     };
 
     std::vector<util::sptr<CommandGroup>> split_client_command(

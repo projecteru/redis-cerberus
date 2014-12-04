@@ -75,10 +75,15 @@ namespace {
         }
 
         for (int i = 0; i < nfds; ++i) {
-            AutoReleaser<Connection> conn(
-                static_cast<Connection*>(events[i].data.ptr));
-            conn->triggered(p, events[i].events);
-            conn.detach();
+            try {
+                AutoReleaser<Connection> conn(
+                    static_cast<Connection*>(events[i].data.ptr));
+                conn->triggered(p, events[i].events);
+                conn.detach();
+            } catch (cerb::IOError e) {
+                fprintf(stderr, " IOError %s\n", e.what());
+                exit(1);
+            }
         }
     }
 
@@ -93,6 +98,50 @@ Connection::~Connection()
 void Acceptor::triggered(Proxy* p, int)
 {
     p->accept_from(this->fd);
+}
+
+static int new_stream_socket()
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        throw SocketCreateError("Server create", errno);
+    }
+    return fd;
+}
+
+Server::Server(std::string const& host, int port, Proxy* p)
+    : Connection(new_stream_socket())
+    , _proxy(p)
+{
+    set_nonblocking(fd);
+    set_tcpnodelay(fd);
+
+    struct hostent* server = gethostbyname(host.c_str());
+    if (server == nullptr) {
+        perror("ERROR, no such host");
+        exit(1);
+    }
+    struct sockaddr_in serv_addr;
+    bzero(&serv_addr, sizeof serv_addr);
+    serv_addr.sin_family = AF_INET;
+    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    serv_addr.sin_port = htons(port);
+
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+    ev.data.ptr = this;
+    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+        perror("epoll_ctl: mod output");
+        exit(1);
+    }
+
+    if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
+        if (errno == EINPROGRESS) {
+            return;
+        }
+        perror("ERROR connecting");
+        exit(1);
+    }
 }
 
 Server::~Server()
@@ -239,6 +288,11 @@ void Server::pop_client(Client* cli)
 
 Client::~Client()
 {
+    std::for_each(this->_peers.begin(), this->_peers.end(),
+                  [&](Server* svr)
+                  {
+                      svr->pop_client(this);
+                  });
     this->_proxy->shut_client(this);
 }
 
@@ -252,8 +306,8 @@ void Client::triggered(Proxy*, int events)
         try {
             this->_recv_from();
         } catch (BadRedisMessage& e) {
-            fprintf(stderr, "-Bad message %lu\n%s\n\n", this->buffer.size(),
-                    this->buffer.to_string().c_str());
+            fprintf(stderr, "-Bad message %lu\n%s\n\n", this->_buffer.size(),
+                    this->_buffer.to_string().c_str());
             exit(1);
         }
     }
@@ -296,6 +350,7 @@ void Client::_send_to()
         break;
     }
     this->_ready_groups.clear();
+    this->_peers.clear();
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
@@ -304,46 +359,61 @@ void Client::_send_to()
         perror("epoll_ctl: mod (w#)");
         exit(1);
     }
+
+    if (!this->_buffer.empty()) {
+        _process();
+    }
 }
 
 void Client::_recv_from()
 {
-    int n = this->buffer.read(this->fd);
+    int n = this->_buffer.read(this->fd);
     // printf("- read %d (%d)\n", n, this->fd);
     if (n == 0) {
         delete this;
         return;
     }
-
-    auto messages(split_client_command(this->buffer, util::mkref(*this)));
-    // printf("-msize %zu (%d)\n", messages.size(), this->fd);
-
-    if (this->peer == nullptr) {
-        this->peer = this->_proxy->connect_to("127.0.0.1", 6379);
+    if (!(_awaiting_groups.empty() && _ready_groups.empty())) {
+        return;
     }
-    Server* svr = this->peer;
+    _process();
+}
+
+void Client::_process()
+{
+    auto messages(split_client_command(this->_buffer, util::mkref(*this)));
+    // printf("-msize %zu (%d)\n", messages.size(), this->fd);
     for (auto i = messages.begin(); i != messages.end(); ++i) {
         util::sptr<CommandGroup> g(std::move(*i));
         if (g->awaiting_count != 0) {
             // printf("-awaiting inc %d\n", g->awaiting_count);
             ++_awaiting_count;
             for (auto ci = g->commands.begin(); ci != g->commands.end(); ++ci) {
+                Server* svr = this->_proxy->get_server_by_slot((*ci)->key_slot);
+                this->_peers.insert(svr);
+                //_peers.insert(svr);
                 svr->push_client_command(**ci);
                 // printf(" to send %s\n", (*ci)->buffer.to_string().c_str());
             }
         }
         _awaiting_groups.push_back(std::move(g));
     }
-    this->buffer.clear();
+    this->_buffer.clear();
     // printf("-awaiting %d\n", _awaiting_count);
     if (0 < _awaiting_count) {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-        ev.data.ptr = svr;
-        if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, svr->fd, &ev) == -1) {
-            perror("epoll_ctl: mod output");
-            exit(1);
-        }
+        std::for_each(this->_peers.begin(), this->_peers.end(),
+                      [&](Server* svr)
+                      {
+                           ev.data.ptr = svr;
+                           if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD,
+                                         svr->fd, &ev) == -1)
+                           {
+                               perror("epoll_ctl: mod output");
+                               exit(1);
+                           }
+                      });
     } else {
         _response_ready();
     }
@@ -368,9 +438,20 @@ void Client::group_responsed()
     // printf("-await %d (%d) %c\n", _awaiting_count, this->fd, _awaiting_count == 0 ? 'O' : 'X');
 }
 
+static std::map<slot, Address> const SLOTS_TO_SERVER({
+    {16384, Address("127.0.0.1", 7100)},
+    {8192, Address("127.0.0.1", 7101)},
+    {2730, Address("127.0.0.1", 7102)},
+    {10923, Address("127.0.0.1", 7102)},
+//  {16384, std::make_pair("127.0.0.1", 6379)},
+});
+
 Proxy::Proxy()
-    : epfd(epoll_create(MAX_EVENTS))
-    , server_conn(nullptr)
+    : _server_map([&](std::string const& host, int port)
+                  {
+                      return new Server(host, port, this);
+                  }, SLOTS_TO_SERVER)
+    , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
         throw std::runtime_error("epoll_create");
@@ -424,55 +505,6 @@ void Proxy::run(int port)
     }
 }
 
-Server* Proxy::connect_to(char const* host, int port)
-{
-    if (this->server_conn != nullptr) {
-        return this->server_conn;
-    }
-
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        perror("Create socket");
-        exit(1);
-    }
-
-    set_nonblocking(fd);
-    set_tcpnodelay(fd);
-
-    struct hostent* server = gethostbyname(host);
-    if (server == nullptr) {
-        perror("ERROR, no such host");
-        exit(1);
-    }
-    struct sockaddr_in serv_addr;
-    bzero(&serv_addr, sizeof serv_addr);
-    serv_addr.sin_family = AF_INET;
-    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-    serv_addr.sin_port = htons(port);
-
-    this->server_conn = new Server(fd, this);
-
-    Server* c = this->server_conn;
-
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    ev.data.ptr = c;
-    if (epoll_ctl(this->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
-        perror("epoll_ctl: mod output");
-        exit(1);
-    }
-
-    if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
-        if (errno == EINPROGRESS) {
-            return c;
-        }
-        perror("ERROR connecting");
-        exit(1);
-    }
-
-    return c;
-}
-
 void Proxy::accept_from(int listen_fd)
 {
     int conn_sock;
@@ -505,13 +537,10 @@ void Proxy::accept_from(int listen_fd)
 
 void Proxy::shut_client(Client* cli)
 {
-    if (this->server_conn != nullptr) {
-        this->server_conn->pop_client(cli);
-    }
     epoll_ctl(this->epfd, EPOLL_CTL_DEL, cli->fd, NULL);
 }
 
-void Proxy::shut_server(Server*)
+void Proxy::shut_server(Server* svr)
 {
-    this->server_conn = nullptr;
+    _server_map.erase_val(svr);
 }

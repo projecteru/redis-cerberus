@@ -63,6 +63,11 @@ namespace cerb {
             return _buffer.size();
         }
 
+        bool empty() const
+        {
+            return _buffer.empty();
+        }
+
         void clear()
         {
             _buffer.clear();

@@ -2,12 +2,12 @@
 #define __CERBERUS_PROXY_HPP__
 
 #include <vector>
+#include <set>
 
 #include "utils/pointer.h"
 #include "common.hpp"
 #include "command.hpp"
-
-int const BUFFER_SIZE = 2 * 1024 * 1024;
+#include "slot_map.hpp"
 
 namespace cerb {
 
@@ -51,11 +51,7 @@ namespace cerb {
         void _send_to();
         void _recv_from();
     public:
-        Server(int fd, Proxy* p)
-            : Connection(fd)
-            , _proxy(p)
-        {}
-
+        Server(std::string const& host, int port, Proxy* p);
         ~Server();
 
         void triggered(Proxy* p, int events);
@@ -71,20 +67,19 @@ namespace cerb {
         void _recv_from();
 
         Proxy* const _proxy;
+        std::set<Server*> _peers;
         std::vector<util::sptr<CommandGroup>> _awaiting_groups;
         std::vector<util::sptr<CommandGroup>> _ready_groups;
         int _awaiting_count;
+        Buffer _buffer;
 
+        void _process();
         void _response_ready();
     public:
-        Buffer buffer;
-        Server* peer;
-
         Client(int fd, Proxy* p)
             : Connection(fd)
             , _proxy(p)
             , _awaiting_count(0)
-            , peer(nullptr)
         {}
 
         ~Client();
@@ -94,16 +89,22 @@ namespace cerb {
     };
 
     class Proxy {
+        SlotMap<Server> _server_map;
     public:
         int epfd;
-        Server* server_conn;
 
         Proxy();
         ~Proxy();
 
+        Proxy(Proxy const&) = delete;
+
+        Server* get_server_by_slot(slot key_slot)
+        {
+            return _server_map.get_by_slot(key_slot);
+        }
+
         void run(int port);
         void accept_from(int listen_fd);
-        Server* connect_to(char const* host, int port);
         void shut_client(Client* cli);
         void shut_server(Server* svr);
     };

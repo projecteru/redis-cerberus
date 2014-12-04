@@ -7,8 +7,8 @@ test:$(TESTDIR)/test.out
 	$(TESTDIR)/test.out
 
 $(TESTDIR)/test.out:message.dt
-	$(LINK) $(TESTDIR)/*.o
-	        $(WORKDIR)/command.o \$(WORKDIR)/exceptions.o \
+	$(LINK) $(TESTDIR)/*.o \
+	        $(WORKDIR)/exceptions.o \
 	        $(TEST_LIBS) \
 	     -o $(TESTDIR)/test.out
 
