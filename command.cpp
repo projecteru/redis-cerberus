@@ -307,11 +307,6 @@ namespace {
             {
                 return util::mkptr(new PingCommandParser(arg_start));
             }},
-        {"KEYS",
-            [](Buffer::iterator)
-            {
-                return util::mkptr(new ForbiddenCommandParser);
-            }},
         {"MGET",
             [](Buffer::iterator arg_start)
             {
@@ -322,6 +317,22 @@ namespace {
             {
                 return util::mkptr(new MSetCommandParser(arg_start));
             }},
+    });
+
+    std::set<std::string> UNSUPPORTED_RSP({
+        "KEYS", "MIGRATE", "MOVE", "OBJECT", "RANDOMKEY", "RENAME",
+        "RENAMENX", "SCAN", "BITOP",
+        "BLPOP", "BRPOP", "BRPOPLPUSH", "RPOPLPUSH",
+        "SINTERSTORE", "SDIFFSTORE", "SINTER", "SMOVE", "SUNIONSTORE",
+        "ZINTERSTORE", "ZUNIONSTORE",
+        "PFADD", "PFCOUNT", "PFMERGE",
+        "PSUBSCRIBE", "PUBSUB", "PUBLISH", "PUNSUBSCRIBE", "SUBSCRIBE", "UNSUBSCRIBE",
+        "EVAL", "EVALSHA", "SCRIPT",
+        "WATCH", "UNWATCH", "EXEC", "DISCARD", "MULTI",
+        "SELECT", "QUIT", "ECHO", "AUTH",
+        "CLUSTER", "BGREWRITEAOF", "BGSAVE", "CLIENT", "COMMAND", "CONFIG",
+        "DBSIZE", "DEBUG", "FLUSHALL", "FLUSHDB", "INFO", "LASTSAVE", "MONITOR",
+        "ROLE", "SAVE", "SHUTDOWN", "SLAVEOF", "SLOWLOG", "SYNC", "TIME",
     });
 
     class ClientCommandSplitter
@@ -335,6 +346,7 @@ namespace {
 
         std::string last_command;
         slot last_key_slot;
+        bool last_command_is_bad;
 
         std::vector<util::sptr<CommandGroup>> splitted_groups;
         std::function<void(byte)> on_byte;
@@ -348,6 +360,7 @@ namespace {
             : BaseType(i)
             , last_command_begin(i)
             , last_key_slot(0)
+            , last_command_is_bad(false)
             , on_byte(std::bind(&ClientCommandSplitter::on_command_byte,
                                 this, std::placeholders::_1))
             , on_element(std::bind(&ClientCommandSplitter::on_raw_element,
@@ -361,6 +374,7 @@ namespace {
             , last_command_begin(rhs.last_command_begin)
             , last_command(std::move(rhs.last_command))
             , last_key_slot(rhs.last_key_slot)
+            , last_command_is_bad(rhs.last_command_is_bad)
             , splitted_groups(std::move(rhs.splitted_groups))
             , on_byte(std::move(rhs.on_byte))
             , on_element(std::move(rhs.on_element))
@@ -377,9 +391,9 @@ namespace {
 
         void on_command_arr_first_element(Buffer::iterator it)
         {
-            auto fi = SPECIAL_RSP.find(last_command);
-            if (fi != SPECIAL_RSP.end()) {
-                special_parser = fi->second(it);
+            auto sfi = SPECIAL_RSP.find(last_command);
+            if (sfi != SPECIAL_RSP.end()) {
+                special_parser = sfi->second(it);
                 this->on_byte =
                     [&](byte b)
                     {
@@ -389,7 +403,17 @@ namespace {
                     [&](Buffer::iterator i)
                     {
                         this->special_parser->on_element(i);
-                        BaseType::on_element(it);
+                        BaseType::on_element(i);
+                    };
+            }
+            else if (UNSUPPORTED_RSP.find(last_command) != UNSUPPORTED_RSP.end())
+            {
+                last_command_is_bad = true;
+                this->on_byte = [](byte) {};
+                this->on_element =
+                    [&](Buffer::iterator i)
+                    {
+                        BaseType::on_element(i);
                     };
             } else {
                 this->on_byte =
@@ -433,7 +457,15 @@ namespace {
                                       this, std::placeholders::_1);
             this->on_element = std::bind(&ClientCommandSplitter::on_raw_element,
                                          this, std::placeholders::_1);
-            if (special_parser.nul()) {
+            if (last_command_is_bad) {
+                splitted_groups.push_back(only_command(
+                    client,
+                    [&](util::sref<CommandGroup> g)
+                    {
+                        return util::mkptr(new DirectResponseCommand(
+                            "-ERR Unsupported command\r\n", g));
+                    }));
+            } else if (special_parser.nul()) {
                 splitted_groups.push_back(only_command(
                     client,
                     [&](util::sref<CommandGroup> g)
@@ -441,13 +473,14 @@ namespace {
                         return util::mkptr(new Command(
                             Buffer(last_command_begin, i), g, true, last_key_slot));
                     }));
-                last_command.clear();
             } else {
                 splitted_groups.push_back(special_parser->spawn_commands(client, i));
                 special_parser.reset();
             }
+            last_command.clear();
             last_command_begin = i;
             last_key_slot = 0;
+            last_command_is_bad = false;
             BaseType::on_element(i);
         }
 
