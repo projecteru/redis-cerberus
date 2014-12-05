@@ -44,6 +44,12 @@ namespace cerb {
             , _val_factory(std::move(vf))
         {}
 
+        SlotMap(SlotMap&& rhs)
+            : _slot_range_to_addr(std::move(rhs._slot_range_to_addr))
+            , _addr_to_val(std::move(rhs._addr_to_val))
+            , _val_factory(std::move(rhs._val_factory))
+        {}
+
         SlotMap(SlotMap const&) = delete;
 
         Type* get_by_slot(slot s)
@@ -64,7 +70,7 @@ namespace cerb {
         {
             std::map<Address, Type*> addr_to_val;
             std::for_each(map.begin(), map.end(),
-                          [&](std::pair<slot, Address>& item)
+                          [&](std::pair<slot, Address> const& item)
                           {
                               auto val_it = _addr_to_val.find(item.second);
                               if (val_it == _addr_to_val.end()) {
@@ -74,7 +80,7 @@ namespace cerb {
                               _addr_to_val.erase(val_it);
                           });
             std::for_each(_addr_to_val.begin(), _addr_to_val.end(),
-                          [&](std::pair<Address, Type*>& item)
+                          [&](std::pair<Address, Type*> const& item)
                           {
                               delete item.second;
                           });

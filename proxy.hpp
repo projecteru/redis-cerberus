@@ -93,7 +93,7 @@ namespace cerb {
     public:
         int epfd;
 
-        Proxy();
+        explicit Proxy(std::map<slot, Address> slot_map);
         ~Proxy();
 
         Proxy(Proxy const&) = delete;
@@ -101,6 +101,11 @@ namespace cerb {
         Server* get_server_by_slot(slot key_slot)
         {
             return _server_map.get_by_slot(key_slot);
+        }
+
+        void set_slot_map(std::map<slot, Address> map)
+        {
+            _server_map.set_map(std::move(map));
         }
 
         void run(int port);

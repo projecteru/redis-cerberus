@@ -132,7 +132,7 @@ Server::Server(std::string const& host, int port, Proxy* p)
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
-        perror("epoll_ctl: mod output");
+        perror("epoll_ctl: +mod output");
         exit(1);
     }
 
@@ -411,7 +411,7 @@ void Client::_process()
                            if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD,
                                          svr->fd, &ev) == -1)
                            {
-                               perror("epoll_ctl: mod output");
+                               perror("epoll_ctl: mod output (sw)");
                                exit(1);
                            }
                       });
@@ -438,19 +438,11 @@ void Client::group_responsed()
     }
 }
 
-static std::map<slot, Address> const SLOTS_TO_SERVER({
-    {16384, Address("127.0.0.1", 7100)},
-    {8192, Address("127.0.0.1", 7101)},
-    {2730, Address("127.0.0.1", 7102)},
-    {10923, Address("127.0.0.1", 7102)},
-//  {16384, std::make_pair("127.0.0.1", 6379)},
-});
-
-Proxy::Proxy()
+Proxy::Proxy(std::map<slot, Address> slot_map)
     : _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
-                  }, SLOTS_TO_SERVER)
+                  }, slot_map)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {

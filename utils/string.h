@@ -9,7 +9,8 @@ namespace util {
     std::string replace_all(std::string src
                           , std::string const& origin_text
                           , std::string const& replacement);
-    std::string join(std::string const& sep, std::vector<std::string> const& values);
+    std::string join(std::string const& sep,
+                     std::vector<std::string> const& values);
 
     std::string str(int i);
     std::string str(long i);
@@ -17,6 +18,10 @@ namespace util {
     std::string str(double d);
     std::string str(bool b);
     std::string str(void const* p);
+
+    std::vector<std::string> split(std::string const& str,
+                                   std::string const& delimiters=" ",
+                                   bool trimEmpty=false);
 
 }
 
