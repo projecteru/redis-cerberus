@@ -491,7 +491,6 @@ void CommandGroup::command_responsed()
         }
         client->group_responsed();
     }
-    // printf("-g await %d %c\n", awaiting_count, awaiting_count == 0 ? 'O' : 'X');
 }
 
 void CommandGroup::append_command(util::sptr<Command> c)
@@ -499,7 +498,6 @@ void CommandGroup::append_command(util::sptr<Command> c)
     if (c->need_send) {
         awaiting_count += 1;
     }
-    // printf("-g append %c %d\n", c->need_send ? '+' : ' ', awaiting_count);
     commands.push_back(std::move(c));
 }
 

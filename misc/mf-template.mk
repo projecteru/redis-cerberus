@@ -1,8 +1,8 @@
-ifeq ($(MODE), inspect)
+ifeq ($(MODE), debug)
 	OPT_FLAGS=
 	DYN_LINK=-rdynamic
 else
-	OPT_FLAGS=-O3
+	OPT_FLAGS=-O3 -D_ELPP_DISABLE_DEBUG_LOGS
 	DYN_LINK=
 endif
 

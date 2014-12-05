@@ -9,6 +9,7 @@
 
 #include "proxy.hpp"
 #include "message.hpp"
+#include "utils/logging.hpp"
 
 using namespace cerb;
 
@@ -81,7 +82,7 @@ namespace {
                 conn->triggered(p, events[i].events);
                 conn.detach();
             } catch (cerb::IOError e) {
-                fprintf(stderr, " IOError %s\n", e.what());
+                LOG(FATAL) << " UNEXPECTED IOError " << e.what();
                 exit(1);
             }
         }
@@ -91,7 +92,7 @@ namespace {
 
 Connection::~Connection()
 {
-    // printf("*Shut %d\n", fd);
+    LOG(DEBUG) << "*close " << fd;
     close(fd);
 }
 
@@ -142,6 +143,7 @@ Server::Server(std::string const& host, int port, Proxy* p)
         perror("ERROR connecting");
         exit(1);
     }
+    LOG(DEBUG) << "+connect " << fd;
 }
 
 Server::~Server()
@@ -156,7 +158,13 @@ void Server::triggered(Proxy*, int events)
         return;
     }
     if (events & EPOLLIN) {
-        this->_recv_from();
+        try {
+            this->_recv_from();
+        } catch (BadRedisMessage& e) {
+            LOG(FATAL) << " Receive bad message from server " << this->fd << " dump buffer";
+            LOG(FATAL) << this->_buffer.to_string();
+            exit(1);
+        }
     }
     if (events & EPOLLOUT) {
         this->_send_to();
@@ -169,7 +177,7 @@ void Server::_send_to()
         return;
     }
     if (!this->_ready_commands.empty()) {
-        // printf("+busy commands\n");
+        LOG(DEBUG) << "+busy";
         return;
     }
 
@@ -183,12 +191,11 @@ void Server::_send_to()
                       cmd->buffer.buffer_ready(iov);
                       n += cmd->buffer.size();
                   });
-//    printf("+write %d in %lu vectors (%d)\n", n, iov.size(), this->fd);
+    LOG(DEBUG) << "+write to " << this->fd << " total vector size: " << iov.size();
     int rest_iov = iov.size();
 
     while (written_iov < int(iov.size())) {
         int iovcnt = std::min(rest_iov, IOV_MAX);
-//        printf("+ * write %d vectors (%d)\n", iovcnt, this->fd);
         int nwrite = writev(this->fd, iov.data() + written_iov, iovcnt);
         if (nwrite < 0) {
             if (errno == EAGAIN) {
@@ -204,7 +211,6 @@ void Server::_send_to()
 
     if (ntotal != n) {
         perror("+writev error (but could recover)");
-        fprintf(stderr, "  need to write %d but write %d\n", n, ntotal);
         exit(1);
     }
 
@@ -220,41 +226,40 @@ void Server::_send_to()
 void Server::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
-    // printf("+ read %d (%d)\n", n, this->fd);
+    LOG(DEBUG) << "+read from " << this->fd << " current buffer size: " << this->_buffer.size();
     if (n == 0) {
         return;
     }
-    try {
-        auto messages(msg::split(this->_buffer.begin(), this->_buffer.end()));
-        // printf("+msize %lld (%d) %c\n", messages.size(), this->fd, messages.size() == 0 ? 'X' : 'O');
-        if (messages.size() > rint(this->_ready_commands.size())) {
-            fprintf(stderr, " Error on split, expected %zu, actual %lld. Original message\n%s\n\n", this->_ready_commands.size(), messages.size(), this->_buffer.to_string().c_str());
-            std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                          [&](util::sref<Command> cmd)
-                          {
-                              fprintf(stderr, " + Client <%lu> %s\n", cmd->buffer.size(), cmd->buffer.to_string().c_str());
-                          });
-            exit(1);
-        }
-        auto client_it = this->_ready_commands.begin();
-        for (auto range = messages.begin(); range != messages.end();
-             ++range, ++client_it)
-        {
-            if (client_it->nul()) {
-                continue;
-            }
-            (*client_it)->copy_response(range.range_begin(), range.range_end());
-        }
-
-        this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
-        if (messages.finished()) {
-            this->_buffer.clear();
-        } else {
-            this->_buffer.truncate_from_begin(messages.interrupt_point());
-        }
-    } catch (BadRedisMessage& e) {
-        fprintf(stderr, "+Bad message %d\n%s\n\n", n, this->_buffer.to_string().c_str());
+    auto messages(msg::split(this->_buffer.begin(), this->_buffer.end()));
+    LOG(DEBUG) << "+read from " << this->fd << " buffer size: " << this->_buffer.size();
+    if (messages.size() > rint(this->_ready_commands.size())) {
+        LOG(FATAL) << "+Error on split, expected size: " << this->_ready_commands.size() << " actual: " << messages.size() << " dump buffer:";
+        LOG(FATAL) << this->_buffer.to_string();
+        LOG(FATAL) << "=== END OF BUFFER ===";
+        LOG(FATAL) << "Dump ready commands:";
+        std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
+                      [&](util::sref<Command> cmd)
+                      {
+                          LOG(FATAL) << " Command with buffer size: " << cmd->buffer.size() << " buffer:";
+                          LOG(FATAL) << cmd->buffer.to_string();
+                      });
         exit(1);
+    }
+    auto client_it = this->_ready_commands.begin();
+    for (auto range = messages.begin(); range != messages.end();
+         ++range, ++client_it)
+    {
+        if (client_it->nul()) {
+            continue;
+        }
+        (*client_it)->copy_response(range.range_begin(), range.range_end());
+    }
+
+    this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
+    if (messages.finished()) {
+        this->_buffer.clear();
+    } else {
+        this->_buffer.truncate_from_begin(messages.interrupt_point());
     }
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -306,9 +311,11 @@ void Client::triggered(Proxy*, int events)
         try {
             this->_recv_from();
         } catch (BadRedisMessage& e) {
-            fprintf(stderr, "-Bad message %lu\n%s\n\n", this->_buffer.size(),
-                    this->_buffer.to_string().c_str());
+            LOG(INFO) << " Receive bad message from client " << this->fd << " dump buffer (before close):";
+            LOG(INFO) << this->_buffer.to_string();
             exit(1);
+            delete this;
+            return;
         }
     }
     if (events & EPOLLOUT) {
@@ -322,7 +329,7 @@ void Client::_send_to()
         return;
     }
     if (!this->_ready_groups.empty()) {
-        // printf("+busy commands\n");
+        LOG(DEBUG) << "-busy";
         return;
     }
 
@@ -337,7 +344,7 @@ void Client::_send_to()
                       n += g->total_buffer_size();
                   });
 
-    // printf("-write %d (%d)\n", n, this->fd);
+    LOG(DEBUG) << "-write to " << this->fd << " total vector size: " << iov.size();
     while (true) {
         int nwrite = writev(this->fd, iov.data(), iov.size());
         if (nwrite <= 0 && errno == EAGAIN) {
@@ -368,7 +375,6 @@ void Client::_send_to()
 void Client::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
-    // printf("- read %d (%d)\n", n, this->fd);
     if (n == 0) {
         delete this;
         return;
@@ -382,24 +388,19 @@ void Client::_recv_from()
 void Client::_process()
 {
     auto messages(split_client_command(this->_buffer, util::mkref(*this)));
-    // printf("-msize %zu (%d)\n", messages.size(), this->fd);
     for (auto i = messages.begin(); i != messages.end(); ++i) {
         util::sptr<CommandGroup> g(std::move(*i));
         if (g->awaiting_count != 0) {
-            // printf("-awaiting inc %d\n", g->awaiting_count);
             ++_awaiting_count;
             for (auto ci = g->commands.begin(); ci != g->commands.end(); ++ci) {
                 Server* svr = this->_proxy->get_server_by_slot((*ci)->key_slot);
                 this->_peers.insert(svr);
-                //_peers.insert(svr);
                 svr->push_client_command(**ci);
-                // printf(" to send %s\n", (*ci)->buffer.to_string().c_str());
             }
         }
         _awaiting_groups.push_back(std::move(g));
     }
     this->_buffer.clear();
-    // printf("-awaiting %d\n", _awaiting_count);
     if (0 < _awaiting_count) {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -435,7 +436,6 @@ void Client::group_responsed()
     if (--_awaiting_count == 0) {
         _response_ready();
     }
-    // printf("-await %d (%d) %c\n", _awaiting_count, this->fd, _awaiting_count == 0 ? 'O' : 'X');
 }
 
 static std::map<slot, Address> const SLOTS_TO_SERVER({
@@ -513,7 +513,7 @@ void Proxy::accept_from(int listen_fd)
     while ((conn_sock = accept(listen_fd, (struct sockaddr*)&remote,
                                &addrlen)) > 0)
     {
-        // printf("*Accepted %d\n", conn_sock);
+        LOG(DEBUG) << "*accept " << conn_sock;
         set_nonblocking(conn_sock);
         set_tcpnodelay(conn_sock);
         Connection* c = new Client(conn_sock, this);
