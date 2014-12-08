@@ -103,14 +103,9 @@ namespace cerb {
             return _server_map.get_by_slot(key_slot);
         }
 
-        void set_slot_map(std::map<slot, Address> map)
-        {
-            _server_map.set_map(std::move(map));
-        }
-
+        void set_slot_map(std::map<slot, Address> map);
         void run(int port);
         void accept_from(int listen_fd);
-        void shut_client(Client* cli);
         void shut_server(Server* svr);
     };
 

@@ -15,6 +15,22 @@ namespace cerb {
         explicit BadRedisMessage(std::string const& what);
     };
 
+    class SystemError
+        : public std::runtime_error
+    {
+    public:
+        SystemError(std::string const& what, int errcode);
+    };
+
+    class UnknownHost
+        : public std::runtime_error
+    {
+    public:
+        explicit UnknownHost(std::string const& what)
+            : std::runtime_error(what)
+        {}
+    };
+
     class IOError
         : public std::runtime_error
     {
@@ -24,12 +40,30 @@ namespace cerb {
         IOError(std::string const& what, int errcode);
     };
 
+    class SocketAcceptError
+        : public IOError
+    {
+    public:
+        explicit SocketAcceptError(int errcode)
+            : IOError("accept", errcode)
+        {}
+    };
+
     class SocketCreateError
         : public IOError
     {
     public:
         SocketCreateError(std::string const& what, int errcode)
             : IOError(what, errcode)
+        {}
+    };
+
+    class ConnectionRefused
+        : public IOError
+    {
+    public:
+        ConnectionRefused(std::string const& host, int errcode)
+            : IOError("Connection refused/" + host, errcode)
         {}
     };
 

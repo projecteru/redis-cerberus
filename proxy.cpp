@@ -22,13 +22,11 @@ namespace {
 
         opts = fcntl(sockfd, F_GETFL);
         if (opts < 0) {
-            perror("fcntl(F_GETFL)\n");
-            exit(1);
+            throw SystemError("fcntl(F_GETFL)", errno);
         }
         opts = (opts | O_NONBLOCK);
         if (fcntl(sockfd, F_SETFL, opts) < 0) {
-            perror("fcntl(F_SETFL)\n");
-            exit(1);
+            throw SystemError("fcntl(set nonblocking)", errno);
         }
     }
 
@@ -71,8 +69,7 @@ namespace {
             if (errno == EINTR) {
                 return;
             }
-            perror("epoll_pwait");
-            exit(EXIT_FAILURE);
+            throw SystemError("epoll_wait", errno);
         }
 
         for (int i = 0; i < nfds; ++i) {
@@ -81,7 +78,7 @@ namespace {
                     static_cast<Connection*>(events[i].data.ptr));
                 conn->triggered(p, events[i].events);
                 conn.detach();
-            } catch (cerb::IOError e) {
+            } catch (cerb::IOError& e) {
                 LOG(FATAL) << " UNEXPECTED IOError " << e.what();
                 exit(1);
             }
@@ -119,8 +116,7 @@ Server::Server(std::string const& host, int port, Proxy* p)
 
     struct hostent* server = gethostbyname(host.c_str());
     if (server == nullptr) {
-        perror("ERROR, no such host");
-        exit(1);
+        throw UnknownHost(host);
     }
     struct sockaddr_in serv_addr;
     bzero(&serv_addr, sizeof serv_addr);
@@ -132,16 +128,14 @@ Server::Server(std::string const& host, int port, Proxy* p)
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
-        perror("epoll_ctl: +mod output");
-        exit(1);
+        throw SystemError("epoll_ctl+add", errno);
     }
 
     if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
         if (errno == EINPROGRESS) {
             return;
         }
-        perror("ERROR connecting");
-        exit(1);
+        throw ConnectionRefused(host, errno);
     }
     LOG(DEBUG) << "+connect " << fd;
 }
@@ -149,6 +143,7 @@ Server::Server(std::string const& host, int port, Proxy* p)
 Server::~Server()
 {
     _proxy->shut_server(this);
+    epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
 }
 
 void Server::triggered(Proxy*, int events)
@@ -161,7 +156,9 @@ void Server::triggered(Proxy*, int events)
         try {
             this->_recv_from();
         } catch (BadRedisMessage& e) {
-            LOG(FATAL) << " Receive bad message from server " << this->fd << " dump buffer";
+            LOG(FATAL) << "Receive bad message from server " << this->fd
+                       << " because: " << e.what()
+                       << " dump buffer (before close):";
             LOG(FATAL) << this->_buffer.to_string();
             exit(1);
         }
@@ -201,8 +198,7 @@ void Server::_send_to()
             if (errno == EAGAIN) {
                 continue;
             }
-            perror("+writev error");
-            exit(1);
+            throw IOError("+writev", errno);
         }
         ntotal += nwrite;
         rest_iov -= iovcnt;
@@ -210,16 +206,14 @@ void Server::_send_to()
     }
 
     if (ntotal != n) {
-        perror("+writev error (but could recover)");
-        exit(1);
+        throw IOError("+writev (should recover)", errno);
     }
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        perror("epoll_ctl: mod (w#)");
-        exit(1);
+        throw SystemError("epoll_ctl+modi", errno);
     }
 }
 
@@ -265,8 +259,7 @@ void Server::_recv_from()
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        perror("epoll_ctl: mod output (sr)");
-        exit(1);
+        throw SystemError("epoll_ctl+modio", errno);
     }
 }
 
@@ -298,7 +291,7 @@ Client::~Client()
                   {
                       svr->pop_client(this);
                   });
-    this->_proxy->shut_client(this);
+    epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
 }
 
 void Client::triggered(Proxy*, int events)
@@ -307,19 +300,26 @@ void Client::triggered(Proxy*, int events)
         delete this;
         return;
     }
-    if (events & EPOLLIN) {
-        try {
-            this->_recv_from();
-        } catch (BadRedisMessage& e) {
-            LOG(INFO) << " Receive bad message from client " << this->fd << " dump buffer (before close):";
-            LOG(INFO) << this->_buffer.to_string();
-            exit(1);
-            delete this;
-            return;
+    try {
+        if (events & EPOLLIN) {
+            try {
+                this->_recv_from();
+            } catch (BadRedisMessage& e) {
+                LOG(ERROR) << "Receive bad message from client " << this->fd
+                           << " because: " << e.what()
+                           << " dump buffer (before close):";
+                LOG(ERROR) << this->_buffer.to_string();
+                delete this;
+                return;
+            }
         }
-    }
-    if (events & EPOLLOUT) {
-        this->_send_to();
+        if (events & EPOLLOUT) {
+            this->_send_to();
+        }
+    } catch (IOError& e) {
+        LOG(ERROR) << "Client IO Error " << this->fd;
+        LOG(ERROR) << "Closed because: " << e.what();
+        delete this;
     }
 }
 
@@ -334,7 +334,7 @@ void Client::_send_to()
     }
 
     std::vector<struct iovec> iov;
-    int n = 0;
+    int n = 0, nwrite = -1;
 
     this->_ready_groups = std::move(this->_awaiting_groups);
     std::for_each(this->_ready_groups.begin(), this->_ready_groups.end(),
@@ -346,15 +346,17 @@ void Client::_send_to()
 
     LOG(DEBUG) << "-write to " << this->fd << " total vector size: " << iov.size();
     while (true) {
-        int nwrite = writev(this->fd, iov.data(), iov.size());
-        if (nwrite <= 0 && errno == EAGAIN) {
-            continue;
-        }
-        if (nwrite != n) {
-            perror("-writev error (but should recover)");
-            exit(1);
+        nwrite = writev(this->fd, iov.data(), iov.size());
+        if (nwrite < 0) {
+            if (errno == EAGAIN) {
+                continue;
+            }
+            throw IOError("-writev", errno);
         }
         break;
+    }
+    if (nwrite != n) {
+        throw IOError("-writev (should recover)", errno);
     }
     this->_ready_groups.clear();
     this->_peers.clear();
@@ -363,8 +365,7 @@ void Client::_send_to()
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        perror("epoll_ctl: mod (w#)");
-        exit(1);
+        throw SystemError("epoll_ctl-modi", errno);
     }
 
     if (!this->_buffer.empty()) {
@@ -411,8 +412,7 @@ void Client::_process()
                            if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD,
                                          svr->fd, &ev) == -1)
                            {
-                               perror("epoll_ctl: mod output (sw)");
-                               exit(1);
+                               throw SystemError("epoll_ctl+modio", errno);
                            }
                       });
     } else {
@@ -426,8 +426,7 @@ void Client::_response_ready()
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        perror("epoll_ctl: mod (w#)");
-        exit(1);
+        throw SystemError("epoll_ctl-modio", errno);
     }
 }
 
@@ -455,6 +454,12 @@ Proxy::~Proxy()
     close(epfd);
 }
 
+void Proxy::set_slot_map(std::map<slot, Address> map)
+{
+    auto s(_server_map.set_map(std::move(map)));
+    std::for_each(s.begin(), s.end(), [](Server* s) {delete s;});
+}
+
 void Proxy::run(int port)
 {
     struct epoll_event ev;
@@ -462,8 +467,7 @@ void Proxy::run(int port)
 
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) {
-        perror("sockfd\n");
-        exit(1);
+        throw SocketCreateError("Listen socket", errno);
     }
     cerb::Acceptor listen_conn(listen_fd);
     set_nonblocking(listen_conn.fd);
@@ -471,8 +475,7 @@ void Proxy::run(int port)
     if (setsockopt(listen_conn.fd, SOL_SOCKET, SO_REUSEPORT | SO_REUSEADDR,
                    &option, sizeof option) < 0)
     {
-        perror("setsockopt");
-        exit(1);
+        throw SystemError("set reuseport", errno);
     }
 
     bzero(&local, sizeof(local));
@@ -480,16 +483,14 @@ void Proxy::run(int port)
     local.sin_addr.s_addr = htonl(INADDR_ANY);;
     local.sin_port = htons(port);
     if (bind(listen_conn.fd, (struct sockaddr*)&local, sizeof local) < 0) {
-        perror("bind\n");
-        exit(1);
+        throw SystemError("bind", errno);
     }
     listen(listen_conn.fd, 20);
 
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = &listen_conn;
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_conn.fd, &ev) == -1) {
-        perror("epoll_ctl: listen_sock");
-        exit(EXIT_FAILURE);
+        throw SystemError("epoll_ctl*listen", errno);
     }
 
     while (true) {
@@ -499,37 +500,28 @@ void Proxy::run(int port)
 
 void Proxy::accept_from(int listen_fd)
 {
-    int conn_sock;
+    int cfd;
     struct sockaddr_in remote;
     socklen_t addrlen = sizeof remote;
-    while ((conn_sock = accept(listen_fd, (struct sockaddr*)&remote,
-                               &addrlen)) > 0)
-    {
-        LOG(DEBUG) << "*accept " << conn_sock;
-        set_nonblocking(conn_sock);
-        set_tcpnodelay(conn_sock);
-        Connection* c = new Client(conn_sock, this);
+    while ((cfd = accept(listen_fd, (struct sockaddr*)&remote, &addrlen)) > 0) {
+        LOG(DEBUG) << "*accept " << cfd;
+        set_nonblocking(cfd);
+        set_tcpnodelay(cfd);
+        Connection* c = new Client(cfd, this);
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
         ev.data.ptr = c;
-        if (epoll_ctl(this->epfd, EPOLL_CTL_ADD, conn_sock, &ev) == -1) {
-            perror("epoll_ctl: add");
-            exit(EXIT_FAILURE);
+        if (epoll_ctl(this->epfd, EPOLL_CTL_ADD, cfd, &ev) == -1) {
+            throw SystemError("epoll_ctl-add", errno);
         }
     }
-    if (conn_sock == -1) {
+    if (cfd == -1) {
         if (errno != EAGAIN && errno != ECONNABORTED
             && errno != EPROTO && errno != EINTR)
         {
-            perror("accept");
-            exit(1);
+            throw SocketAcceptError(errno);
         }
     }
-}
-
-void Proxy::shut_client(Client* cli)
-{
-    epoll_ctl(this->epfd, EPOLL_CTL_DEL, cli->fd, NULL);
 }
 
 void Proxy::shut_server(Server* svr)

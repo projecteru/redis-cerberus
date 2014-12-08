@@ -66,8 +66,9 @@ namespace cerb {
             return val_it->second;
         }
 
-        void set_map(std::map<slot, Address> map)
+        std::set<Type*> set_map(std::map<slot, Address> map)
         {
+            std::set<Type*> removed_vals;
             std::map<Address, Type*> addr_to_val;
             std::for_each(map.begin(), map.end(),
                           [&](std::pair<slot, Address> const& item)
@@ -82,10 +83,11 @@ namespace cerb {
             std::for_each(_addr_to_val.begin(), _addr_to_val.end(),
                           [&](std::pair<Address, Type*> const& item)
                           {
-                              delete item.second;
+                              removed_vals.insert(item.second);
                           });
             _addr_to_val = std::move(addr_to_val);
             _slot_range_to_addr = std::move(map);
+            return std::move(removed_vals);
         }
 
         void erase_val(Type* val)

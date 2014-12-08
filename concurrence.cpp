@@ -1,8 +1,10 @@
 #include <cstdlib>
 #include <fstream>
+#include <stdexcept>
 
 #include "concurrence.hpp"
 #include "utils/string.h"
+#include "utils/logging.hpp"
 
 using namespace cerb;
 
@@ -51,7 +53,13 @@ void ListenThread::run()
     this->_thread.reset(new std::thread(
         [=]()
         {
-            this->_proxy->run(this->_listen_port);
+            try {
+                this->_proxy->run(this->_listen_port);
+            } catch (std::runtime_error& e) {
+                LOG(FATAL) << "Terminated by runtime exception";
+                LOG(FATAL) << "::  " << e.what();
+                exit(1);
+            }
         }));
 }
 

@@ -26,6 +26,10 @@ static std::string error_message(int errcode)
     return std::string(strerror_r(errcode, message, 256));
 }
 
+SystemError::SystemError(std::string const& what, int errcode)
+    : std::runtime_error(what + " " + error_message(errcode))
+{}
+
 IOError::IOError(std::string const& what, int errcode)
     : std::runtime_error(what + " " + error_message(errcode))
     , errcode(errcode)
