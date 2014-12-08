@@ -57,7 +57,7 @@ namespace {
             return begin + size + 2;
         }
 
-        void on_arr(rint)
+        void on_arr(rint, InputIterator)
         {
             EXPECT_TRUE(false) << "unexpected call on_arr";
         }
@@ -102,6 +102,58 @@ TEST(Message, SimpleElement)
     r = cerb::msg::parse(r, t.end(), c);
     ASSERT_EQ("ERR ASK", c.last_error);
     ASSERT_EQ(t.end(), r);
+}
+
+TEST(Message, SplitEmptyMessage)
+{
+    std::string t("");
+    auto bms(cerb::msg::split(t.begin(), t.end()));
+    ASSERT_TRUE(bms.finished());
+    ASSERT_EQ(0, bms.size());
+    ASSERT_EQ(t.begin(), bms.interrupt_point());
+}
+
+TEST(Message, SplitEmptyString)
+{
+    {
+        std::string t("$0\r\n\r\n");
+        auto bms(cerb::msg::split(t.begin(), t.end()));
+        ASSERT_TRUE(bms.finished());
+        ASSERT_EQ(1, bms.size());
+        ASSERT_EQ(t.end(), bms.interrupt_point());
+    }
+    {
+        std::string t("+\r\n");
+        auto bms(cerb::msg::split(t.begin(), t.end()));
+        ASSERT_TRUE(bms.finished());
+        ASSERT_EQ(1, bms.size());
+        ASSERT_EQ(t.end(), bms.interrupt_point());
+    }
+    {
+        std::string t("-\r\n");
+        auto bms(cerb::msg::split(t.begin(), t.end()));
+        ASSERT_TRUE(bms.finished());
+        ASSERT_EQ(1, bms.size());
+        ASSERT_EQ(t.end(), bms.interrupt_point());
+    }
+}
+
+TEST(Message, SplitNil)
+{
+    std::string t("$-1\r\n");
+    auto bms(cerb::msg::split(t.begin(), t.end()));
+    ASSERT_TRUE(bms.finished());
+    ASSERT_EQ(1, bms.size());
+    ASSERT_EQ(t.end(), bms.interrupt_point());
+}
+
+TEST(Message, SplitEmptyArray)
+{
+    std::string t("*0\r\n");
+    auto bms(cerb::msg::split(t.begin(), t.end()));
+    ASSERT_TRUE(bms.finished());
+    ASSERT_EQ(1, bms.size());
+    ASSERT_EQ(t.end(), bms.interrupt_point());
 }
 
 TEST(Message, SplitSimpleMessage)
@@ -200,7 +252,27 @@ TEST(Message, SplitMessageWithArray)
 
 TEST(Message, InterruptedMessage)
 {
-    SimpleMessageCollector c;
+    {
+        std::string t("+");
+        auto bms(cerb::msg::split(t.begin(), t.end()));
+        ASSERT_FALSE(bms.finished());
+        ASSERT_EQ(0, bms.size());
+        ASSERT_EQ(t.begin(), bms.interrupt_point());
+    }
+    {
+        std::string t("+O");
+        auto bms(cerb::msg::split(t.begin(), t.end()));
+        ASSERT_FALSE(bms.finished());
+        ASSERT_EQ(0, bms.size());
+        ASSERT_EQ(t.begin(), bms.interrupt_point());
+    }
+    {
+        std::string t("+OK");
+        auto bms(cerb::msg::split(t.begin(), t.end()));
+        ASSERT_FALSE(bms.finished());
+        ASSERT_EQ(0, bms.size());
+        ASSERT_EQ(t.begin(), bms.interrupt_point());
+    }
     {
         std::string t("+OK\r");
         auto bms(cerb::msg::split(t.begin(), t.end()));
@@ -208,6 +280,7 @@ TEST(Message, InterruptedMessage)
         ASSERT_EQ(0, bms.size());
         ASSERT_EQ(t.begin(), bms.interrupt_point());
     }
+
     {
         std::string f("+PONG\r\n");
         std::string t(f + ":");

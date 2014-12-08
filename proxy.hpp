@@ -2,10 +2,12 @@
 #define __CERBERUS_PROXY_HPP__
 
 #include <vector>
+#include <set>
 
+#include "utils/pointer.h"
 #include "common.hpp"
-
-int const BUFFER_SIZE = 2 * 1024 * 1024;
+#include "command.hpp"
+#include "slot_map.hpp"
 
 namespace cerb {
 
@@ -18,6 +20,8 @@ namespace cerb {
         explicit Connection(int fd)
             : fd(fd)
         {}
+
+        Connection(Connection const&) = delete;
 
         virtual ~Connection();
 
@@ -35,82 +39,77 @@ namespace cerb {
         void triggered(Proxy* p, int events);
     };
 
-    class IOConnection
+    class Server
         : public Connection
     {
-    public:
-        int write_size;
-        byte buf[BUFFER_SIZE];
-
-        explicit IOConnection(int fd)
-            : Connection(fd)
-            , write_size(0)
-        {}
-    };
-
-    class Client;
-
-    class Server
-        : public IOConnection
-    {
         Proxy* const _proxy;
-        int _buffer_used;
+        Buffer _buffer;
+
+        std::vector<util::sref<Command>> _commands;
+        std::vector<util::sref<Command>> _ready_commands;
 
         void _send_to();
         void _recv_from();
     public:
-        std::vector<Client*> clients;
-        std::vector<Client*> ready_clients;
-
-        Server(int fd, Proxy* p)
-            : IOConnection(fd)
-            , _proxy(p)
-            , _buffer_used(0)
-        {}
-
+        Server(std::string const& host, int port, Proxy* p);
         ~Server();
 
         void triggered(Proxy* p, int events);
 
-        void push_client(Client* cli);
+        void push_client_command(util::sref<Command> cmd);
         void pop_client(Client* cli);
     };
 
     class Client
-        : public IOConnection
+        : public Connection
     {
         void _send_to();
         void _recv_from();
 
         Proxy* const _proxy;
-    public:
-        Server* peer;
+        std::set<Server*> _peers;
+        std::vector<util::sptr<CommandGroup>> _awaiting_groups;
+        std::vector<util::sptr<CommandGroup>> _ready_groups;
+        int _awaiting_count;
+        Buffer _buffer;
 
+        void _process();
+        void _response_ready();
+    public:
         Client(int fd, Proxy* p)
-            : IOConnection(fd)
+            : Connection(fd)
             , _proxy(p)
-            , peer(nullptr)
+            , _awaiting_count(0)
         {}
 
         ~Client();
 
         void triggered(Proxy* p, int events);
+        void group_responsed();
     };
 
     class Proxy {
+        SlotMap<Server> _server_map;
     public:
         int epfd;
-        Server* server_conn;
 
-        Proxy();
+        explicit Proxy(std::map<slot, Address> slot_map);
         ~Proxy();
 
-        void run(int port);
-        void notify_each(std::vector<Client*>::iterator begin,
-                         std::vector<Client*>::iterator end);
+        Proxy(Proxy const&) = delete;
 
+        Server* get_server_by_slot(slot key_slot)
+        {
+            return _server_map.get_by_slot(key_slot);
+        }
+
+        void set_slot_map(std::map<slot, Address> map)
+        {
+            _server_map.set_map(std::move(map));
+        }
+
+        void run(int port);
         void accept_from(int listen_fd);
-        Server* connect_to(char const* host, int port);
         void shut_client(Client* cli);
         void shut_server(Server* svr);
     };

@@ -52,6 +52,16 @@ namespace util {
             return *_ptr == *rhs._ptr;
         }
 
+        bool is(value_type const* rhs) const
+        {
+            return _ptr == rhs;
+        }
+
+        bool is(sref rhs) const
+        {
+            return _ptr == rhs._ptr;
+        }
+
         bool operator!=(sref rhs) const
         {
             return *_ptr != *rhs._ptr;
@@ -85,6 +95,11 @@ namespace util {
         RawType cp() const
         {
             return *_ptr;
+        }
+
+        void reset()
+        {
+            _ptr = nullptr;
         }
     private:
         pointer _ptr;

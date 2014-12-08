@@ -1,3 +1,4 @@
+WORKDIR=.
 TESTDIR=./test
 
 include misc/mf-template.mk
@@ -6,7 +7,8 @@ test:$(TESTDIR)/test.out
 	$(TESTDIR)/test.out
 
 $(TESTDIR)/test.out:message.dt
-	$(LINK) $(TESTDIR)/*.o \
+	$(LINK) $(TESTDIR)/*.o utils/*.o \
+	        $(WORKDIR)/exceptions.o \
 	        $(TEST_LIBS) \
 	     -o $(TESTDIR)/test.out
 

@@ -12,6 +12,25 @@ namespace cerb {
     {
     public:
         explicit BadRedisMessage(byte token);
+        explicit BadRedisMessage(std::string const& what);
+    };
+
+    class IOError
+        : public std::runtime_error
+    {
+    public:
+        int const errcode;
+
+        IOError(std::string const& what, int errcode);
+    };
+
+    class SocketCreateError
+        : public IOError
+    {
+    public:
+        SocketCreateError(std::string const& what, int errcode)
+            : IOError(what, errcode)
+        {}
     };
 
 }

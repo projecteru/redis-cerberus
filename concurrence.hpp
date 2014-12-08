@@ -8,20 +8,19 @@
 
 namespace cerb {
 
-    class ListenThread {
-        Proxy _proxy;
+    class ListenThread
+        : protected std::thread
+    {
         int const _listen_port;
+        util::sptr<Proxy> _proxy;
         util::sptr<std::thread> _thread;
     public:
-        explicit ListenThread(int listen_port)
-            : _listen_port(listen_port)
-            , _thread(nullptr)
-        {}
-
+        ListenThread(int listen_port, std::string const& nodes_file);
         ListenThread(ListenThread const&) = delete;
 
         ListenThread(ListenThread&& rhs)
             : _listen_port(rhs._listen_port)
+            , _proxy(std::move(rhs._proxy))
             , _thread(std::move(rhs._thread))
         {}
 
