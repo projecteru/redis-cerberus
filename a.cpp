@@ -19,7 +19,7 @@ int main(int argc, char* argv[])
 {
     if (argc == 1) {
         std::cerr << "Usage:" << std::endl;
-        std::cerr << "    cerberus NODES_FILE" << std::endl;
+        std::cerr << "    cerberus NODE_HOST:PORT" << std::endl;
         return 1;
     }
     signal(SIGINT, exit_on_int);

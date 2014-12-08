@@ -3,39 +3,6 @@
 
 #include "string.h"
 
-std::string util::replace_all(std::string src
-                            , std::string const& origin_text
-                            , std::string const& replacement)
-{
-    std::string::size_type origin_length = origin_text.size();
-    std::string::size_type replace_length = replacement.size();
-    for (std::string::size_type occurrence = src.find(origin_text);
-         std::string::npos != occurrence;
-         occurrence = src.find(origin_text, occurrence))
-    {
-        src.replace(occurrence, origin_length, replacement);
-        occurrence += replace_length;
-    }
-    return src;
-}
-
-std::string util::join(std::string const& sep,
-                       std::vector<std::string> const& values)
-{
-    if (values.empty()) {
-        return "";
-    }
-    std::string result(values[0]);
-    std::for_each(++values.begin()
-                , values.end()
-                , [&](std::string const& v)
-                  {
-                      result += sep;
-                      result += v;
-                  });
-    return result;
-}
-
 template <typename T>
 static std::string str_from_something(T const& t)
 {
@@ -74,9 +41,9 @@ std::string util::str(void const* p)
     return str_from_something(p);
 }
 
-std::vector<std::string> util::split(std::string const& str,
-                                     std::string const& delimiters,
-                                     bool trimEmpty)
+std::vector<std::string> util::split_str(std::string const& str,
+                                         std::string const& delimiters,
+                                         bool trimEmpty)
 {
     std::vector<std::string> r;
     std::string::size_type lastPos = 0;

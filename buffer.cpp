@@ -27,6 +27,9 @@ int Buffer::read(int fd)
     while ((nread = ::read(fd, local, BUFFER_SIZE)) > 0) {
         n += nread;
         this->_buffer.insert(this->_buffer.end(), local, local + nread);
+        if (nread < BUFFER_SIZE) {
+            break;
+        }
     }
     if (nread == -1 && errno != EAGAIN) {
         throw IOError("buffer read", errno);

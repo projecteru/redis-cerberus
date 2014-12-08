@@ -5,41 +5,18 @@
 #include <algorithm>
 
 #include "common.hpp"
+#include "utils/address.hpp"
 
 namespace cerb {
 
-    class Address {
-    public:
-        std::string host;
-        int port;
-
-        Address(std::string h, int p)
-            : host(std::move(h))
-            , port(p)
-        {}
-
-        bool operator==(Address const& rhs) const
-        {
-            return host == rhs.host && port == rhs.port;
-        }
-
-        bool operator<(Address const& rhs) const
-        {
-            if (host == rhs.host) {
-                return port < rhs.port;
-            }
-            return host < rhs.host;
-        }
-    };
-
     template <typename Type>
     class SlotMap {
-        std::map<slot, Address> _slot_range_to_addr;
-        std::map<Address, Type*> _addr_to_val;
+        std::map<slot, util::Address> _slot_range_to_addr;
+        std::map<util::Address, Type*> _addr_to_val;
         std::function<Type*(std::string const&, int)> _val_factory;
     public:
         SlotMap(std::function<Type*(std::string const&, int)> vf,
-                std::map<slot, Address> map)
+                std::map<slot, util::Address> map)
             : _slot_range_to_addr(std::move(map))
             , _val_factory(std::move(vf))
         {}
@@ -66,12 +43,12 @@ namespace cerb {
             return val_it->second;
         }
 
-        std::set<Type*> set_map(std::map<slot, Address> map)
+        std::set<Type*> set_map(std::map<slot, util::Address> map)
         {
             std::set<Type*> removed_vals;
-            std::map<Address, Type*> addr_to_val;
+            std::map<util::Address, Type*> addr_to_val;
             std::for_each(map.begin(), map.end(),
-                          [&](std::pair<slot, Address> const& item)
+                          [&](std::pair<slot, util::Address> const& item)
                           {
                               auto val_it = _addr_to_val.find(item.second);
                               if (val_it == _addr_to_val.end()) {
@@ -81,7 +58,7 @@ namespace cerb {
                               _addr_to_val.erase(val_it);
                           });
             std::for_each(_addr_to_val.begin(), _addr_to_val.end(),
-                          [&](std::pair<Address, Type*> const& item)
+                          [&](std::pair<util::Address, Type*> const& item)
                           {
                               removed_vals.insert(item.second);
                           });

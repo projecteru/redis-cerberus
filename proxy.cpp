@@ -9,6 +9,7 @@
 
 #include "proxy.hpp"
 #include "message.hpp"
+#include "utils/string.h"
 #include "utils/logging.hpp"
 
 using namespace cerb;
@@ -85,6 +86,99 @@ namespace {
         }
     }
 
+    int new_stream_socket()
+    {
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) {
+            throw SocketCreateError("Server create", errno);
+        }
+        return fd;
+    }
+
+    void connect_fd(std::string const& host, int port, int fd)
+    {
+        set_tcpnodelay(fd);
+
+        struct hostent* server = gethostbyname(host.c_str());
+        if (server == nullptr) {
+            throw UnknownHost(host);
+        }
+        struct sockaddr_in serv_addr;
+        bzero(&serv_addr, sizeof serv_addr);
+        serv_addr.sin_family = AF_INET;
+        memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+        serv_addr.sin_port = htons(port);
+
+        if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
+            if (errno == EINPROGRESS) {
+                return;
+            }
+            throw ConnectionRefused(host, errno);
+        }
+        LOG(DEBUG) << "+connect " << fd;
+    }
+
+    class NodesRetriver
+        : public Connection
+    {
+    public:
+        explicit NodesRetriver(util::Address const& addr)
+            : Connection(new_stream_socket())
+        {
+            connect_fd(addr.host, addr.port, this->fd);
+        }
+
+        void triggered(Proxy*, int) {}
+    };
+
+    void set_slot_to(std::map<slot, util::Address>& map, std::string address,
+                            std::vector<std::string>::iterator slot_range_begin,
+                            std::vector<std::string>::iterator slot_range_end)
+    {
+        util::Address addr(util::Address::from_host_port(address));
+        std::for_each(slot_range_begin, slot_range_end,
+                      [&](std::string const& s)
+                      {
+                          if (s[0] == '[') {
+                              return;
+                          }
+                          std::vector<std::string> range(
+                              util::split_str(s, "-", true));
+                          map.insert(std::make_pair(atoi(range.at(1).data()) + 1,
+                                     addr));
+                      });
+    }
+
+    std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info)
+    {
+        std::vector<std::string> lines(util::split_str(nodes_info, "\n", true));
+        std::map<slot, util::Address> slot_map;
+        std::for_each(lines.begin(), lines.end(),
+                      [&](std::string const& line) {
+                          std::vector<std::string> line_cont(
+                              util::split_str(line, " ", true));
+                          if (line_cont.size() < 9) {
+                              return;
+                          }
+                          set_slot_to(slot_map, line_cont[1],
+                                      line_cont.begin() + 8, line_cont.end());
+                      });
+        return std::move(slot_map);
+    }
+
+    std::map<slot, util::Address> slot_map_from_remote(util::Address const& a)
+    {
+        static std::string const CMD("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
+        NodesRetriver s(a);
+        if (-1 == write(s.fd, CMD.c_str(), CMD.size())) {
+            throw IOError("Fetch cluster nodes info", errno);
+        }
+        Buffer r;
+        r.read(s.fd);
+        LOG(DEBUG) << "Cluster nodes:\n" << r.to_string();
+        return parse_slot_map(r.to_string());
+    }
+
 }
 
 Connection::~Connection()
@@ -98,31 +192,12 @@ void Acceptor::triggered(Proxy* p, int)
     p->accept_from(this->fd);
 }
 
-static int new_stream_socket()
-{
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        throw SocketCreateError("Server create", errno);
-    }
-    return fd;
-}
-
 Server::Server(std::string const& host, int port, Proxy* p)
     : Connection(new_stream_socket())
     , _proxy(p)
 {
     set_nonblocking(fd);
-    set_tcpnodelay(fd);
-
-    struct hostent* server = gethostbyname(host.c_str());
-    if (server == nullptr) {
-        throw UnknownHost(host);
-    }
-    struct sockaddr_in serv_addr;
-    bzero(&serv_addr, sizeof serv_addr);
-    serv_addr.sin_family = AF_INET;
-    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-    serv_addr.sin_port = htons(port);
+    connect_fd(host, port, this->fd);
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -130,14 +205,6 @@ Server::Server(std::string const& host, int port, Proxy* p)
     if (epoll_ctl(_proxy->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
         throw SystemError("epoll_ctl+add", errno);
     }
-
-    if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
-        if (errno == EINPROGRESS) {
-            return;
-        }
-        throw ConnectionRefused(host, errno);
-    }
-    LOG(DEBUG) << "+connect " << fd;
 }
 
 Server::~Server()
@@ -437,11 +504,11 @@ void Client::group_responsed()
     }
 }
 
-Proxy::Proxy(std::map<slot, Address> slot_map)
+Proxy::Proxy(util::Address const& remote)
     : _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
-                  }, slot_map)
+                  }, slot_map_from_remote(remote))
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
@@ -454,13 +521,13 @@ Proxy::~Proxy()
     close(epfd);
 }
 
-void Proxy::set_slot_map(std::map<slot, Address> map)
+void Proxy::set_slot_map(std::map<slot, util::Address> map)
 {
     auto s(_server_map.set_map(std::move(map)));
     std::for_each(s.begin(), s.end(), [](Server* s) {delete s;});
 }
 
-void Proxy::run(int port)
+void Proxy::run(int listen_port)
 {
     struct epoll_event ev;
     struct sockaddr_in local;
@@ -480,8 +547,8 @@ void Proxy::run(int port)
 
     bzero(&local, sizeof(local));
     local.sin_family = AF_INET;
-    local.sin_addr.s_addr = htonl(INADDR_ANY);;
-    local.sin_port = htons(port);
+    local.sin_addr.s_addr = htonl(INADDR_ANY);
+    local.sin_port = htons(listen_port);
     if (bind(listen_conn.fd, (struct sockaddr*)&local, sizeof local) < 0) {
         throw SystemError("bind", errno);
     }
