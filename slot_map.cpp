@@ -1,0 +1,85 @@
+#include <unistd.h>
+
+#include "slot_map.hpp"
+#include "fdutil.hpp"
+#include "buffer.hpp"
+#include "exceptions.hpp"
+#include "utils/logging.hpp"
+#include "utils/string.h"
+
+using namespace cerb;
+
+namespace {
+
+    class BlockingNodesRetriver
+        : public FDWrapper
+    {
+    public:
+        explicit BlockingNodesRetriver(util::Address const& addr)
+            : FDWrapper(new_stream_socket())
+        {
+            connect_fd(addr.host, addr.port, this->fd);
+        }
+    };
+
+    void set_slot_to(std::map<slot, util::Address>& map, std::string address,
+                            std::vector<std::string>::iterator slot_range_begin,
+                            std::vector<std::string>::iterator slot_range_end)
+    {
+        util::Address addr(util::Address::from_host_port(address));
+        std::for_each(slot_range_begin, slot_range_end,
+                      [&](std::string const& slot_range)
+                      {
+                          if (slot_range[0] == '[') {
+                              return;
+                          }
+                          slot s = atoi(util::split_str(
+                                slot_range, "-", true).at(1).data()) + 1;
+                          LOG(DEBUG) << "Map slot " << s << " to "
+                                     << addr.host << ':' << addr.port;
+                          map.insert(std::make_pair(s, addr));
+                      });
+    }
+
+    std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info)
+    {
+        std::vector<std::string> lines(util::split_str(nodes_info, "\n", true));
+        std::map<slot, util::Address> slot_map;
+        std::for_each(lines.begin(), lines.end(),
+                      [&](std::string const& line) {
+                          std::vector<std::string> line_cont(
+                              util::split_str(line, " ", true));
+                          if (line_cont.size() < 9) {
+                              return;
+                          }
+                          set_slot_to(slot_map, line_cont[1],
+                                      line_cont.begin() + 8, line_cont.end());
+                      });
+        return std::move(slot_map);
+    }
+
+    std::string const CLUSTER_NODES_CMD("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
+
+}
+
+std::map<slot, util::Address> cerb::read_slot_map_from(int fd)
+{
+    Buffer r;
+    r.read(fd);
+    LOG(DEBUG) << "Cluster nodes:\n" << r.to_string();
+    return parse_slot_map(r.to_string());
+}
+
+void cerb::write_slot_map_cmd_to(int fd)
+{
+    if (-1 == write(fd, CLUSTER_NODES_CMD.c_str(), CLUSTER_NODES_CMD.size())) {
+        throw IOError("Fetch cluster nodes info", errno);
+    }
+}
+
+std::map<slot, util::Address> cerb::slot_map_from_remote(util::Address const& a)
+{
+    BlockingNodesRetriver s(a);
+    write_slot_map_cmd_to(s.fd);
+    return read_slot_map_from(s.fd);
+}

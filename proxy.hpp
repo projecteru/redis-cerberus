@@ -2,29 +2,16 @@
 #define __CERBERUS_PROXY_HPP__
 
 #include <vector>
-#include <set>
 
 #include "utils/pointer.h"
 #include "common.hpp"
 #include "command.hpp"
 #include "slot_map.hpp"
+#include "fdutil.hpp"
 
 namespace cerb {
 
     class Proxy;
-
-    class FDWrapper {
-    public:
-        int fd;
-
-        FDWrapper(int fd)
-            : fd(fd)
-        {}
-
-        FDWrapper(FDWrapper const&) = delete;
-
-        ~FDWrapper();
-    };
 
     class Connection
         : public FDWrapper

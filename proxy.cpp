@@ -1,9 +1,6 @@
-#include <cstring>
 #include <climits>
 #include <unistd.h>
-#include <fcntl.h>
 #include <netdb.h>
-#include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <algorithm>
 
@@ -15,138 +12,7 @@
 
 using namespace cerb;
 
-namespace {
-
-    int const MAX_EVENTS = 1024;
-
-    void set_nonblocking(int sockfd) {
-        int opts;
-
-        opts = fcntl(sockfd, F_GETFL);
-        if (opts < 0) {
-            throw SystemError("fcntl(F_GETFL)", errno);
-        }
-        opts = (opts | O_NONBLOCK);
-        if (fcntl(sockfd, F_SETFL, opts) < 0) {
-            throw SystemError("fcntl(set nonblocking)", errno);
-        }
-    }
-
-    int set_tcpnodelay(int sockfd)
-    {
-        int nodelay = 1;
-        socklen_t len = sizeof nodelay;
-        return setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, len);
-    }
-
-    int new_stream_socket()
-    {
-        int fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) {
-            throw SocketCreateError("Server create", errno);
-        }
-        return fd;
-    }
-
-    void connect_fd(std::string const& host, int port, int fd)
-    {
-        set_tcpnodelay(fd);
-
-        struct hostent* server = gethostbyname(host.c_str());
-        if (server == nullptr) {
-            throw UnknownHost(host);
-        }
-        struct sockaddr_in serv_addr;
-        bzero(&serv_addr, sizeof serv_addr);
-        serv_addr.sin_family = AF_INET;
-        memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-        serv_addr.sin_port = htons(port);
-
-        if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
-            if (errno == EINPROGRESS) {
-                return;
-            }
-            throw ConnectionRefused(host, errno);
-        }
-        LOG(DEBUG) << "+connect " << fd;
-    }
-
-    class BlockingNodesRetriver
-        : public FDWrapper
-    {
-    public:
-        explicit BlockingNodesRetriver(util::Address const& addr)
-            : FDWrapper(new_stream_socket())
-        {
-            connect_fd(addr.host, addr.port, this->fd);
-        }
-    };
-
-    void set_slot_to(std::map<slot, util::Address>& map, std::string address,
-                            std::vector<std::string>::iterator slot_range_begin,
-                            std::vector<std::string>::iterator slot_range_end)
-    {
-        util::Address addr(util::Address::from_host_port(address));
-        std::for_each(slot_range_begin, slot_range_end,
-                      [&](std::string const& slot_range)
-                      {
-                          if (slot_range[0] == '[') {
-                              return;
-                          }
-                          slot s = atoi(util::split_str(
-                                slot_range, "-", true).at(1).data()) + 1;
-                          LOG(DEBUG) << "Map slot " << s << " to "
-                                     << addr.host << ':' << addr.port;
-                          map.insert(std::make_pair(s, addr));
-                      });
-    }
-
-    std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info)
-    {
-        std::vector<std::string> lines(util::split_str(nodes_info, "\n", true));
-        std::map<slot, util::Address> slot_map;
-        std::for_each(lines.begin(), lines.end(),
-                      [&](std::string const& line) {
-                          std::vector<std::string> line_cont(
-                              util::split_str(line, " ", true));
-                          if (line_cont.size() < 9) {
-                              return;
-                          }
-                          set_slot_to(slot_map, line_cont[1],
-                                      line_cont.begin() + 8, line_cont.end());
-                      });
-        return std::move(slot_map);
-    }
-
-    std::map<slot, util::Address> read_slot_map_from(int fd)
-    {
-        Buffer r;
-        r.read(fd);
-        LOG(DEBUG) << "Cluster nodes:\n" << r.to_string();
-        return parse_slot_map(r.to_string());
-    }
-
-    std::string const CLUSTER_NODE_CMD(
-        "*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
-
-    std::map<slot, util::Address> slot_map_from_remote(util::Address const& a)
-    {
-        BlockingNodesRetriver s(a);
-        if (-1 == write(s.fd, CLUSTER_NODE_CMD.c_str(),
-                        CLUSTER_NODE_CMD.size()))
-        {
-            throw IOError("Fetch cluster nodes info", errno);
-        }
-        return read_slot_map_from(s.fd);
-    }
-
-}
-
-FDWrapper::~FDWrapper()
-{
-    LOG(DEBUG) << "*close " << fd;
-    close(fd);
-}
+static int const MAX_EVENTS = 1024;
 
 void Acceptor::triggered(Proxy* p, int)
 {
@@ -321,11 +187,7 @@ SlotsMapUpdater::SlotsMapUpdater(util::Address const& addr, Proxy* p)
 
 void SlotsMapUpdater::_send_cmd()
 {
-    if (-1 == write(this->fd, CLUSTER_NODE_CMD.c_str(),
-                    CLUSTER_NODE_CMD.size()))
-    {
-        throw IOError("#Fetch cluster nodes info", errno);
-    }
+    write_slot_map_cmd_to(this->fd);
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
@@ -607,34 +469,14 @@ void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
 
 void Proxy::run(int listen_port)
 {
+    cerb::Acceptor acc(new_stream_socket());
+    set_nonblocking(acc.fd);
+    bind_to(acc.fd, listen_port);
+
     struct epoll_event ev;
-    struct sockaddr_in local;
-
-    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd < 0) {
-        throw SocketCreateError("Listen socket", errno);
-    }
-    cerb::Acceptor listen_conn(listen_fd);
-    set_nonblocking(listen_conn.fd);
-    int option = 1;
-    if (setsockopt(listen_conn.fd, SOL_SOCKET, SO_REUSEPORT | SO_REUSEADDR,
-                   &option, sizeof option) < 0)
-    {
-        throw SystemError("set reuseport", errno);
-    }
-
-    bzero(&local, sizeof(local));
-    local.sin_family = AF_INET;
-    local.sin_addr.s_addr = htonl(INADDR_ANY);
-    local.sin_port = htons(listen_port);
-    if (bind(listen_conn.fd, (struct sockaddr*)&local, sizeof local) < 0) {
-        throw SystemError("bind", errno);
-    }
-    listen(listen_conn.fd, 20);
-
     ev.events = EPOLLIN | EPOLLET;
-    ev.data.ptr = &listen_conn;
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_conn.fd, &ev) == -1) {
+    ev.data.ptr = &acc;
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, acc.fd, &ev) == -1) {
         throw SystemError("epoll_ctl*listen", errno);
     }
 

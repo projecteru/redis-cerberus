@@ -2,6 +2,7 @@
 #define __CERBERUS_SLOT_MAP_HPP__
 
 #include <map>
+#include <set>
 #include <algorithm>
 
 #include "common.hpp"
@@ -89,6 +90,10 @@ namespace cerb {
             }
         }
     };
+
+    std::map<slot, util::Address> read_slot_map_from(int fd);
+    void write_slot_map_cmd_to(int fd);
+    std::map<slot, util::Address> slot_map_from_remote(util::Address const& a);
 
 }
 

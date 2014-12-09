@@ -1,0 +1,87 @@
+#include <unistd.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/tcp.h>
+
+#include "fdutil.hpp"
+#include "exceptions.hpp"
+#include "utils/logging.hpp"
+
+using namespace cerb;
+
+FDWrapper::~FDWrapper()
+{
+    LOG(DEBUG) << "*close " << fd;
+    close(fd);
+}
+
+void cerb::set_nonblocking(int sockfd) {
+    int opts;
+
+    opts = fcntl(sockfd, F_GETFL);
+    if (opts < 0) {
+        throw SystemError("fcntl(F_GETFL)", errno);
+    }
+    opts = (opts | O_NONBLOCK);
+    if (fcntl(sockfd, F_SETFL, opts) < 0) {
+        throw SystemError("fcntl(set nonblocking)", errno);
+    }
+}
+
+int cerb::set_tcpnodelay(int sockfd)
+{
+    int nodelay = 1;
+    socklen_t len = sizeof nodelay;
+    return setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, len);
+}
+
+int cerb::new_stream_socket()
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        throw SocketCreateError("Server create", errno);
+    }
+    return fd;
+}
+
+void cerb::connect_fd(std::string const& host, int port, int fd)
+{
+    set_tcpnodelay(fd);
+
+    struct hostent* server = gethostbyname(host.c_str());
+    if (server == nullptr) {
+        throw UnknownHost(host);
+    }
+    struct sockaddr_in serv_addr;
+    bzero(&serv_addr, sizeof serv_addr);
+    serv_addr.sin_family = AF_INET;
+    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    serv_addr.sin_port = htons(port);
+
+    if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
+        if (errno == EINPROGRESS) {
+            return;
+        }
+        throw ConnectionRefused(host, errno);
+    }
+    LOG(DEBUG) << "+connect " << fd;
+}
+
+void cerb::bind_to(int fd, int port)
+{
+    int option = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT | SO_REUSEADDR,
+                   &option, sizeof option) < 0)
+    {
+        throw SystemError("set reuseport", errno);
+    }
+    struct sockaddr_in local;
+    bzero(&local, sizeof(local));
+    local.sin_family = AF_INET;
+    local.sin_addr.s_addr = htonl(INADDR_ANY);
+    local.sin_port = htons(port);
+    if (bind(fd, (struct sockaddr*)&local, sizeof local) < 0) {
+        throw SystemError("bind", errno);
+    }
+    ::listen(fd, 20);
+}
