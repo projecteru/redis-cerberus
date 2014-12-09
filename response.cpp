@@ -72,11 +72,11 @@ namespace {
         void _push_rsp(Buffer::iterator i)
         {
             if (!_last_error.empty()) {
-                // Should also handle CLUSTERDOWN
-                // for cluster shrink
-                if (util::strnieq(_last_error, "MOVED", 5) ||
-                    util::strnieq(_last_error, "ASK", 3))
+                if (util::stristartswith(_last_error, "MOVED") ||
+                    util::stristartswith(_last_error, "ASK") ||
+                    util::stristartswith(_last_error, "CLUSTERDOWN"))
                 {
+                    LOG(DEBUG) << "Retry due to " << _last_error;
                     return _push_retry_rsp();
                 }
             }

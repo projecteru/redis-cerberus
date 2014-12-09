@@ -18,6 +18,11 @@ bool util::strnieq(std::string const& lhs, std::string const& rhs, ssize_type n)
     return true;
 }
 
+bool util::stristartswith(std::string const& s, std::string const& pre)
+{
+    return strnieq(s, pre, pre.size());
+}
+
 template <typename T>
 static std::string str_from_something(T const& t)
 {

@@ -2,14 +2,15 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <execinfo.h>
 
 #include "proxy.hpp"
 #include "concurrence.hpp"
 #include "utils/logging.hpp"
 
-int const PORT = 8889;
+static int const PORT = 8889;
 
-void exit_on_int(int)
+static void exit_on_int(int)
 {
     LOG(INFO) << "C-c Exit.";
     exit(0);

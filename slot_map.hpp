@@ -31,6 +31,16 @@ namespace cerb {
         SlotMap(SlotMap const&) = delete;
 
         template <typename F>
+        void iterate_addr(F f) const
+        {
+            std::for_each(_addr_to_val.begin(), _addr_to_val.end(),
+                          [&](std::pair<util::Address, Type*> const& item)
+                          {
+                              f(item.first);
+                          });
+        }
+
+        template <typename F>
         bool iterate_addr_util(F f) const
         {
             return _addr_to_val.end() != std::find_if(
@@ -93,7 +103,7 @@ namespace cerb {
 
     std::map<slot, util::Address> read_slot_map_from(int fd);
     void write_slot_map_cmd_to(int fd);
-    std::map<slot, util::Address> slot_map_from_remote(util::Address const& a);
+    std::map<slot, util::Address> sync_init_slot_map(util::Address const& a);
 
 }
 

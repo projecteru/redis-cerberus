@@ -114,8 +114,9 @@ void Server::_send_to()
 void Server::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
-    LOG(DEBUG) << "+read from " << this->fd << " current buffer size: " << this->_buffer.size();
     if (n == 0) {
+        LOG(INFO) << "Server hang up: " << this->fd;
+        delete this;
         return;
     }
     LOG(DEBUG) << "+read from " << this->fd
@@ -130,6 +131,7 @@ void Server::_recv_from()
                       {
                           LOG(ERROR) << "::: " << rsp->dump_buffer().to_string();
                       });
+        LOG(ERROR) << "Rest buffer: " << this->_buffer.to_string();
         LOG(FATAL) << "Exit";
         exit(1);
     }
@@ -198,15 +200,16 @@ void SlotsMapUpdater::_send_cmd()
 
 void SlotsMapUpdater::_recv_rsp()
 {
-    _proxy->set_slot_map(read_slot_map_from(this->fd));
+    _updated_map = std::move(read_slot_map_from(this->fd));
+    _proxy->notify_slot_map_updated();
 }
 
-void SlotsMapUpdater::triggered(Proxy* p, int events)
+void SlotsMapUpdater::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
         LOG(ERROR) << "Failed to retrieve slot map from " << this->fd
                    << ". Closed because remote hung up.";
-        return p->retrieve_slot_map();
+        _proxy->notify_slot_map_updated();
     }
     try {
         if (events & EPOLLIN) {
@@ -218,8 +221,7 @@ void SlotsMapUpdater::triggered(Proxy* p, int events)
     } catch (IOError& e) {
         LOG(ERROR) << "Failed to retrive slot map from " << this->fd
                    << ". Closed because: " << e.what();
-        LOG(ERROR) << "Retry...";
-        return p->retrieve_slot_map();
+        _proxy->notify_slot_map_updated();
     }
 }
 
@@ -386,8 +388,8 @@ Proxy::Proxy(util::Address const& remote)
     : _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
-                  }, slot_map_from_remote(remote))
-    , _slot_updater(nullptr)
+                  }, sync_init_slot_map(remote))
+    , _active_slot_updaters_count(0)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
@@ -400,9 +402,34 @@ Proxy::~Proxy()
     close(epfd);
 }
 
-void Proxy::set_slot_map(std::map<slot, util::Address> map)
+void Proxy::_update_slot_map()
 {
-    _slot_updater.reset();
+    if (_slot_updaters.end() == std::find_if(
+            _slot_updaters.begin(), _slot_updaters.end(),
+            [&](util::sptr<SlotsMapUpdater>& updater)
+            {
+                if (!updater->success()) {
+                    LOG(DEBUG) << "Discard a failed node";
+                    return false;
+                }
+                std::map<slot, util::Address> m(updater->deliver_map());
+                for (auto i = m.begin(); i != m.end(); ++i) {
+                    if (i->second.host.empty()) {
+                        LOG(DEBUG) << "Discard result because address is empty string " << ':' << i->second.port;
+                        return false;
+                    }
+                }
+                _slot_updaters.clear();
+                _set_slot_map(std::move(m));
+                return true;
+            }))
+    {
+        throw BadClusterStatus("Fail to update slot mapping");
+    }
+}
+
+void Proxy::_set_slot_map(std::map<slot, util::Address> map)
+{
     auto s(_server_map.set_map(std::move(map)));
     std::for_each(s.begin(), s.end(), [](Server* s) {delete s;});
 
@@ -436,29 +463,37 @@ void Proxy::set_slot_map(std::map<slot, util::Address> map)
                   });
 }
 
-void Proxy::retrieve_slot_map()
+void Proxy::_retrieve_slot_map()
 {
-    if (!_server_map.iterate_addr_util(
+    _server_map.iterate_addr(
         [&](util::Address const& addr)
         {
             try {
-                _slot_updater.reset(new SlotsMapUpdater(addr, this));
-                return true;
+                _slot_updaters.push_back(
+                    util::mkptr(new SlotsMapUpdater(addr, this)));
+                ++_active_slot_updaters_count;
             } catch (ConnectionRefused& e) {
+                LOG(INFO) << e.what();
                 LOG(INFO) << "Disconnected: " << addr.host << ':' << addr.port;
-                return false;
+            } catch (UnknownHost& e) {
+                LOG(ERROR) << e.what();
             }
-        }))
-    {
-        LOG(FATAL) << "No nodes could be reached";
-        exit(1);
+        });
+    if (_slot_updaters.empty()) {
+        throw BadClusterStatus("No nodes could be reached");
     }
-    LOG(DEBUG) << "Retrieve slot map from " << _slot_updater->fd;
 }
 
-bool Proxy::_slot_map_not_updated() const
+void Proxy::notify_slot_map_updated()
 {
-    return _slot_updater.nul() && !_move_ask_command.empty();
+    if (--_active_slot_updaters_count == 0) {
+        _update_slot_map();
+    }
+}
+
+bool Proxy::_should_update_slot_map() const
+{
+    return _slot_updaters.empty() && !_move_ask_command.empty();
 }
 
 void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
@@ -505,9 +540,9 @@ void Proxy::_loop()
             exit(1);
         }
     }
-    if (this->_slot_map_not_updated()) {
-        LOG(DEBUG) << "Need update slot map";
-        this->retrieve_slot_map();
+    if (this->_should_update_slot_map()) {
+        LOG(DEBUG) << "Should update slot map";
+        this->_retrieve_slot_map();
     }
 }
 

@@ -9,6 +9,8 @@ namespace util {
     typedef std::string::size_type ssize_type;
 
     bool strnieq(std::string const& lhs, std::string const& rhs, ssize_type n);
+    bool stristartswith(std::string const& s, std::string const& pre);
+
     std::string str(int i);
     std::string str(long i);
     std::string str(long long i);

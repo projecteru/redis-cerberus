@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include <stdexcept>
 
 #include "concurrence.hpp"
@@ -20,7 +19,7 @@ void ListenThread::run()
             try {
                 this->_proxy->run(this->_listen_port);
             } catch (std::runtime_error& e) {
-                LOG(FATAL) << "Terminated by runtime exception: " << e.what();
+                LOG(ERROR) << "Terminated by runtime error: " << e.what();
                 exit(1);
             }
         }));

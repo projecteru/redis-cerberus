@@ -30,6 +30,11 @@ SystemError::SystemError(std::string const& what, int errcode)
     : std::runtime_error(what + " " + error_message(errcode))
 {}
 
+UnknownHost::UnknownHost(std::string const& host)
+    : std::runtime_error("Unknown host: " +
+                         (host.empty() ? "(empty string)" : host))
+{}
+
 IOError::IOError(std::string const& what, int errcode)
     : std::runtime_error(what + " " + error_message(errcode))
     , errcode(errcode)

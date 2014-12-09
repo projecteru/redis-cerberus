@@ -22,23 +22,36 @@ namespace {
         }
     };
 
+    void map_slot_to(std::map<slot, util::Address>& map,
+                     std::string const& slot_rep, util::Address const& addr)
+    {
+        slot s = atoi(slot_rep.data()) + 1;
+        LOG(DEBUG) << "Map slot " << s << " to " << addr.host << ':' << addr.port;
+        map.insert(std::make_pair(s, addr));
+    }
+
     void set_slot_to(std::map<slot, util::Address>& map, std::string address,
                             std::vector<std::string>::iterator slot_range_begin,
                             std::vector<std::string>::iterator slot_range_end)
     {
         util::Address addr(util::Address::from_host_port(address));
-        std::for_each(slot_range_begin, slot_range_end,
-                      [&](std::string const& slot_range)
-                      {
-                          if (slot_range[0] == '[') {
-                              return;
-                          }
-                          slot s = atoi(util::split_str(
-                                slot_range, "-", true).at(1).data()) + 1;
-                          LOG(DEBUG) << "Map slot " << s << " to "
-                                     << addr.host << ':' << addr.port;
-                          map.insert(std::make_pair(s, addr));
-                      });
+        std::for_each(
+            slot_range_begin, slot_range_end,
+            [&](std::string const& slot_range)
+            {
+                if (slot_range[0] == '[') {
+                    return;
+                }
+                std::vector<std::string> begin_end(
+                    util::split_str(slot_range, "-", true));
+                if (begin_end.empty()) {
+                    return;
+                }
+                if (begin_end.size() == 1) {
+                    return map_slot_to(map, begin_end[0], addr);
+                }
+                return map_slot_to(map, begin_end[1], addr);
+            });
     }
 
     std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info)
@@ -77,9 +90,22 @@ void cerb::write_slot_map_cmd_to(int fd)
     }
 }
 
-std::map<slot, util::Address> cerb::slot_map_from_remote(util::Address const& a)
+std::map<slot, util::Address> cerb::sync_init_slot_map(util::Address const& a)
 {
     BlockingNodesRetriver s(a);
     write_slot_map_cmd_to(s.fd);
-    return read_slot_map_from(s.fd);
+    std::map<slot, util::Address> m(read_slot_map_from(s.fd));
+    if (m.size() == 0) {
+        throw BadClusterStatus("No slots");
+    }
+    std::for_each(m.begin(), m.end(),
+                  [&](std::pair<slot const, util::Address>& item)
+                  {
+                      if (item.second.host.empty()) {
+                          LOG(DEBUG) << "Set default host string " << a.host
+                                     << " to :" << item.second.port;
+                          item.second.host = a.host;
+                      }
+                  });
+    return std::move(m);
 }

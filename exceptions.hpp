@@ -15,6 +15,15 @@ namespace cerb {
         explicit BadRedisMessage(std::string const& what);
     };
 
+    class BadClusterStatus
+        : public std::runtime_error
+    {
+    public:
+        explicit BadClusterStatus(std::string const& what)
+            : std::runtime_error(what)
+        {}
+    };
+
     class SystemError
         : public std::runtime_error
     {
@@ -26,9 +35,7 @@ namespace cerb {
         : public std::runtime_error
     {
     public:
-        explicit UnknownHost(std::string const& what)
-            : std::runtime_error(what)
-        {}
+        explicit UnknownHost(std::string const& host);
     };
 
     class IOError
