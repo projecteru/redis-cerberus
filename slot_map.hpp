@@ -29,6 +29,17 @@ namespace cerb {
 
         SlotMap(SlotMap const&) = delete;
 
+        template <typename F>
+        bool iterate_addr_util(F f) const
+        {
+            return _addr_to_val.end() != std::find_if(
+                _addr_to_val.begin(), _addr_to_val.end(),
+                [&](std::pair<util::Address, Type*> const& item)
+                {
+                    return f(item.first);
+                });
+        }
+
         Type* get_by_slot(slot s)
         {
             auto slot_it = _slot_range_to_addr.upper_bound(s);

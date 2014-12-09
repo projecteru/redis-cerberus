@@ -10,7 +10,7 @@ all:a.d objs utilities
 runtest:objs utils
 	make -f test/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
 
-objs:concurrence.d buffer.d command.d proxy.d exceptions.d
+objs:concurrence.d buffer.d command.d response.d proxy.d exceptions.d
 	true
 
 utilities:

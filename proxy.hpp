@@ -13,17 +13,28 @@ namespace cerb {
 
     class Proxy;
 
-    class Connection {
+    class FDWrapper {
     public:
         int fd;
 
-        explicit Connection(int fd)
+        FDWrapper(int fd)
             : fd(fd)
         {}
 
-        Connection(Connection const&) = delete;
+        FDWrapper(FDWrapper const&) = delete;
 
-        virtual ~Connection();
+        ~FDWrapper();
+    };
+
+    class Connection
+        : public FDWrapper
+    {
+    public:
+        explicit Connection(int fd)
+            : FDWrapper(fd)
+        {}
+
+        virtual ~Connection() {}
 
         virtual void triggered(Proxy* p, int events) = 0;
     };
@@ -86,10 +97,29 @@ namespace cerb {
 
         void triggered(Proxy* p, int events);
         void group_responsed();
+        void add_peer(Server* svr);
+    };
+
+    class SlotsMapUpdater
+        : public Connection
+    {
+        Proxy* _proxy;
+
+        void _send_cmd();
+        void _recv_rsp();
+    public:
+        SlotsMapUpdater(util::Address const& addr, Proxy* p);
+
+        void triggered(Proxy* p, int events);
     };
 
     class Proxy {
         SlotMap<Server> _server_map;
+        util::sptr<SlotsMapUpdater> _slot_updater;
+        std::vector<util::sref<Command>> _move_ask_command;
+
+        bool _slot_map_not_updated() const;
+        void _loop();
     public:
         int epfd;
 
@@ -103,7 +133,9 @@ namespace cerb {
             return _server_map.get_by_slot(key_slot);
         }
 
+        void retrieve_slot_map();
         void set_slot_map(std::map<slot, util::Address> map);
+        void retry_move_ask_command_later(util::sref<Command> cmd);
         void run(int listen_port);
         void accept_from(int listen_fd);
         void shut_server(Server* svr);

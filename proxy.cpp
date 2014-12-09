@@ -8,7 +8,8 @@
 #include <algorithm>
 
 #include "proxy.hpp"
-#include "message.hpp"
+#include "response.hpp"
+#include "exceptions.hpp"
 #include "utils/string.h"
 #include "utils/logging.hpp"
 
@@ -36,54 +37,6 @@ namespace {
         int nodelay = 1;
         socklen_t len = sizeof nodelay;
         return setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, len);
-    }
-
-    template <typename T>
-    class AutoReleaser {
-        T* _p;
-    public:
-        explicit AutoReleaser(T* p)
-            : _p(p)
-        {}
-
-        ~AutoReleaser()
-        {
-            delete _p;
-        }
-
-        T* operator->() const
-        {
-            return _p;
-        }
-
-        void detach()
-        {
-            _p = nullptr;
-        }
-    };
-
-    void loop(cerb::Proxy* p)
-    {
-        struct epoll_event events[MAX_EVENTS];
-        int nfds = epoll_wait(p->epfd, events, MAX_EVENTS, -1);
-        if (nfds == -1) {
-            if (errno == EINTR) {
-                return;
-            }
-            throw SystemError("epoll_wait", errno);
-        }
-
-        for (int i = 0; i < nfds; ++i) {
-            try {
-                AutoReleaser<Connection> conn(
-                    static_cast<Connection*>(events[i].data.ptr));
-                conn->triggered(p, events[i].events);
-                conn.detach();
-            } catch (cerb::IOError& e) {
-                LOG(FATAL) << " UNEXPECTED IOError " << e.what();
-                exit(1);
-            }
-        }
     }
 
     int new_stream_socket()
@@ -118,17 +71,15 @@ namespace {
         LOG(DEBUG) << "+connect " << fd;
     }
 
-    class NodesRetriver
-        : public Connection
+    class BlockingNodesRetriver
+        : public FDWrapper
     {
     public:
-        explicit NodesRetriver(util::Address const& addr)
-            : Connection(new_stream_socket())
+        explicit BlockingNodesRetriver(util::Address const& addr)
+            : FDWrapper(new_stream_socket())
         {
             connect_fd(addr.host, addr.port, this->fd);
         }
-
-        void triggered(Proxy*, int) {}
     };
 
     void set_slot_to(std::map<slot, util::Address>& map, std::string address,
@@ -137,15 +88,16 @@ namespace {
     {
         util::Address addr(util::Address::from_host_port(address));
         std::for_each(slot_range_begin, slot_range_end,
-                      [&](std::string const& s)
+                      [&](std::string const& slot_range)
                       {
-                          if (s[0] == '[') {
+                          if (slot_range[0] == '[') {
                               return;
                           }
-                          std::vector<std::string> range(
-                              util::split_str(s, "-", true));
-                          map.insert(std::make_pair(atoi(range.at(1).data()) + 1,
-                                     addr));
+                          slot s = atoi(util::split_str(
+                                slot_range, "-", true).at(1).data()) + 1;
+                          LOG(DEBUG) << "Map slot " << s << " to "
+                                     << addr.host << ':' << addr.port;
+                          map.insert(std::make_pair(s, addr));
                       });
     }
 
@@ -166,22 +118,31 @@ namespace {
         return std::move(slot_map);
     }
 
-    std::map<slot, util::Address> slot_map_from_remote(util::Address const& a)
+    std::map<slot, util::Address> read_slot_map_from(int fd)
     {
-        static std::string const CMD("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
-        NodesRetriver s(a);
-        if (-1 == write(s.fd, CMD.c_str(), CMD.size())) {
-            throw IOError("Fetch cluster nodes info", errno);
-        }
         Buffer r;
-        r.read(s.fd);
+        r.read(fd);
         LOG(DEBUG) << "Cluster nodes:\n" << r.to_string();
         return parse_slot_map(r.to_string());
     }
 
+    std::string const CLUSTER_NODE_CMD(
+        "*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
+
+    std::map<slot, util::Address> slot_map_from_remote(util::Address const& a)
+    {
+        BlockingNodesRetriver s(a);
+        if (-1 == write(s.fd, CLUSTER_NODE_CMD.c_str(),
+                        CLUSTER_NODE_CMD.size()))
+        {
+            throw IOError("Fetch cluster nodes info", errno);
+        }
+        return read_slot_map_from(s.fd);
+    }
+
 }
 
-Connection::~Connection()
+FDWrapper::~FDWrapper()
 {
     LOG(DEBUG) << "*close " << fd;
     close(fd);
@@ -225,8 +186,8 @@ void Server::triggered(Proxy*, int events)
         } catch (BadRedisMessage& e) {
             LOG(FATAL) << "Receive bad message from server " << this->fd
                        << " because: " << e.what()
-                       << " dump buffer (before close):";
-            LOG(FATAL) << this->_buffer.to_string();
+                       << " dump buffer (before close): "
+                       << this->_buffer.to_string();
             exit(1);
         }
     }
@@ -291,37 +252,30 @@ void Server::_recv_from()
     if (n == 0) {
         return;
     }
-    auto messages(msg::split(this->_buffer.begin(), this->_buffer.end()));
-    LOG(DEBUG) << "+read from " << this->fd << " buffer size: " << this->_buffer.size();
-    if (messages.size() > rint(this->_ready_commands.size())) {
-        LOG(FATAL) << "+Error on split, expected size: " << this->_ready_commands.size() << " actual: " << messages.size() << " dump buffer:";
-        LOG(FATAL) << this->_buffer.to_string();
-        LOG(FATAL) << "=== END OF BUFFER ===";
-        LOG(FATAL) << "Dump ready commands:";
-        std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                      [&](util::sref<Command> cmd)
+    LOG(DEBUG) << "+read from " << this->fd
+               << " buffer size " << this->_buffer.size()
+               << ": " << this->_buffer.to_string();
+    auto responses(split_server_response(this->_buffer));
+    if (responses.size() > this->_ready_commands.size()) {
+        LOG(ERROR) << "+Error on split, expected size: " << this->_ready_commands.size()
+                   << " actual: " << responses.size() << " dump buffer:";
+        std::for_each(responses.begin(), responses.end(),
+                      [](util::sptr<Response> const& rsp)
                       {
-                          LOG(FATAL) << " Command with buffer size: " << cmd->buffer.size() << " buffer:";
-                          LOG(FATAL) << cmd->buffer.to_string();
+                          LOG(ERROR) << "::: " << rsp->dump_buffer().to_string();
                       });
+        LOG(FATAL) << "Exit";
         exit(1);
     }
+    LOG(DEBUG) << "+responses size: " << responses.size();
+    LOG(DEBUG) << "+rest buffer: " << this->_buffer.size() << ": " << this->_buffer.to_string();
     auto client_it = this->_ready_commands.begin();
-    for (auto range = messages.begin(); range != messages.end();
-         ++range, ++client_it)
-    {
-        if (client_it->nul()) {
-            continue;
-        }
-        (*client_it)->copy_response(range.range_begin(), range.range_end());
-    }
-
+    std::for_each(responses.begin(), responses.end(),
+                  [&](util::sptr<Response>& rsp)
+                  {
+                      rsp->rsp_to(*client_it++, util::mkref(*this->_proxy));
+                  });
     this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
-    if (messages.finished()) {
-        this->_buffer.clear();
-    } else {
-        this->_buffer.truncate_from_begin(messages.interrupt_point());
-    }
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
@@ -351,6 +305,62 @@ void Server::pop_client(Client* cli)
                   });
 }
 
+SlotsMapUpdater::SlotsMapUpdater(util::Address const& addr, Proxy* p)
+    : Connection(new_stream_socket())
+    , _proxy(p)
+{
+    set_nonblocking(fd);
+    connect_fd(addr.host, addr.port, this->fd);
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+    ev.data.ptr = this;
+    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+        throw SystemError("epoll_ctl#add", errno);
+    }
+}
+
+void SlotsMapUpdater::_send_cmd()
+{
+    if (-1 == write(this->fd, CLUSTER_NODE_CMD.c_str(),
+                    CLUSTER_NODE_CMD.size()))
+    {
+        throw IOError("#Fetch cluster nodes info", errno);
+    }
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.ptr = this;
+    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
+        throw SystemError("epoll_ctl#modi", errno);
+    }
+}
+
+void SlotsMapUpdater::_recv_rsp()
+{
+    _proxy->set_slot_map(read_slot_map_from(this->fd));
+}
+
+void SlotsMapUpdater::triggered(Proxy* p, int events)
+{
+    if (events & EPOLLRDHUP) {
+        LOG(ERROR) << "Failed to retrieve slot map from " << this->fd
+                   << ". Closed because remote hung up.";
+        return p->retrieve_slot_map();
+    }
+    try {
+        if (events & EPOLLIN) {
+            this->_recv_rsp();
+        }
+        if (events & EPOLLOUT) {
+            this->_send_cmd();
+        }
+    } catch (IOError& e) {
+        LOG(ERROR) << "Failed to retrive slot map from " << this->fd
+                   << ". Closed because: " << e.what();
+        LOG(ERROR) << "Retry...";
+        return p->retrieve_slot_map();
+    }
+}
+
 Client::~Client()
 {
     std::for_each(this->_peers.begin(), this->_peers.end(),
@@ -374,8 +384,8 @@ void Client::triggered(Proxy*, int events)
             } catch (BadRedisMessage& e) {
                 LOG(ERROR) << "Receive bad message from client " << this->fd
                            << " because: " << e.what()
-                           << " dump buffer (before close):";
-                LOG(ERROR) << this->_buffer.to_string();
+                           << " dump buffer (before close): "
+                           << this->_buffer.to_string();
                 delete this;
                 return;
             }
@@ -384,8 +394,8 @@ void Client::triggered(Proxy*, int events)
             this->_send_to();
         }
     } catch (IOError& e) {
-        LOG(ERROR) << "Client IO Error " << this->fd;
-        LOG(ERROR) << "Closed because: " << e.what();
+        LOG(ERROR) << "Client IO Error " << this->fd
+                   << ". Closed because: " << e.what();
         delete this;
     }
 }
@@ -443,6 +453,7 @@ void Client::_send_to()
 void Client::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
+    LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size();
     if (n == 0) {
         delete this;
         return;
@@ -504,11 +515,17 @@ void Client::group_responsed()
     }
 }
 
+void Client::add_peer(Server* svr)
+{
+    this->_peers.insert(svr);
+}
+
 Proxy::Proxy(util::Address const& remote)
     : _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
                   }, slot_map_from_remote(remote))
+    , _slot_updater(nullptr)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
@@ -523,8 +540,69 @@ Proxy::~Proxy()
 
 void Proxy::set_slot_map(std::map<slot, util::Address> map)
 {
+    _slot_updater.reset();
     auto s(_server_map.set_map(std::move(map)));
     std::for_each(s.begin(), s.end(), [](Server* s) {delete s;});
+
+    if (_move_ask_command.empty()) {
+        return;
+    }
+
+    LOG(DEBUG) << "Retry MOVED or ASK: " << _move_ask_command.size();
+    std::set<Server*> svrs;
+    std::for_each(_move_ask_command.begin(), _move_ask_command.end(),
+                  [&](util::sref<Command> cmd)
+                  {
+                      Server* svr = this->get_server_by_slot(cmd->key_slot);
+                      cmd->group->client->add_peer(svr);
+                      svr->push_client_command(cmd);
+                      svrs.insert(svr);
+                  });
+    _move_ask_command.clear();
+
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+    std::for_each(svrs.begin(), svrs.end(),
+                  [&](Server* svr)
+                  {
+                      ev.data.ptr = svr;
+                      if (epoll_ctl(this->epfd, EPOLL_CTL_MOD,
+                                    svr->fd, &ev) == -1)
+                      {
+                          throw SystemError("epoll_ctl+modio update", errno);
+                      }
+                  });
+}
+
+void Proxy::retrieve_slot_map()
+{
+    if (!_server_map.iterate_addr_util(
+        [&](util::Address const& addr)
+        {
+            try {
+                _slot_updater.reset(new SlotsMapUpdater(addr, this));
+                return true;
+            } catch (ConnectionRefused& e) {
+                LOG(INFO) << "Disconnected: " << addr.host << ':' << addr.port;
+                return false;
+            }
+        }))
+    {
+        LOG(FATAL) << "No nodes could be reached";
+        exit(1);
+    }
+    LOG(DEBUG) << "Retrieve slot map from " << _slot_updater->fd;
+}
+
+bool Proxy::_slot_map_not_updated() const
+{
+    return _slot_updater.nul() && !_move_ask_command.empty();
+}
+
+void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
+{
+    _move_ask_command.push_back(cmd);
+    LOG(DEBUG) << "A MOVED or ASK added for later retry - " << _move_ask_command.size();
 }
 
 void Proxy::run(int listen_port)
@@ -561,7 +639,33 @@ void Proxy::run(int listen_port)
     }
 
     while (true) {
-        loop(this);
+        this->_loop();
+    }
+}
+
+void Proxy::_loop()
+{
+    struct epoll_event events[MAX_EVENTS];
+    int nfds = epoll_wait(this->epfd, events, MAX_EVENTS, -1);
+    if (nfds == -1) {
+        if (errno == EINTR) {
+            return;
+        }
+        throw SystemError("epoll_wait", errno);
+    }
+
+    for (int i = 0; i < nfds; ++i) {
+        try {
+            Connection* conn = static_cast<Connection*>(events[i].data.ptr);
+            conn->triggered(this, events[i].events);
+        } catch (cerb::IOError& e) {
+            LOG(FATAL) << " UNEXPECTED IOError " << e.what();
+            exit(1);
+        }
+    }
+    if (this->_slot_map_not_updated()) {
+        LOG(DEBUG) << "Need update slot map";
+        this->retrieve_slot_map();
     }
 }
 

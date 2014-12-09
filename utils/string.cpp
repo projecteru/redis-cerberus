@@ -3,6 +3,21 @@
 
 #include "string.h"
 
+using namespace util;
+
+bool util::strnieq(std::string const& lhs, std::string const& rhs, ssize_type n)
+{
+    for (ssize_type i = 0; i < n; ++i) {
+        if (lhs.size() == i || rhs.size() == i) {
+            return lhs.size() == rhs.size();
+        }
+        if (std::toupper(lhs[i]) != std::toupper(rhs[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 template <typename T>
 static std::string str_from_something(T const& t)
 {

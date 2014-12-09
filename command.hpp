@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "utils/pointer.h"
-#include "typetraits.hpp"
 #include "buffer.hpp"
 
 struct iovec;
@@ -24,7 +23,7 @@ namespace cerb {
 
         virtual ~Command() {}
 
-        void copy_response(Buffer::iterator begin, Buffer::iterator end);
+        void copy_response(Buffer rsp);
 
         Command(Buffer b, util::sref<CommandGroup> g, bool n, slot ks)
             : buffer(std::move(b))
