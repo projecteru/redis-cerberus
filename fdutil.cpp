@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <fcntl.h>
-#include <netdb.h>
 #include <netinet/tcp.h>
+#include <arpa/inet.h>
 
 #include "fdutil.hpp"
 #include "exceptions.hpp"
@@ -48,14 +48,12 @@ void cerb::connect_fd(std::string const& host, int port, int fd)
 {
     set_tcpnodelay(fd);
 
-    struct hostent* server = gethostbyname(host.c_str());
-    if (server == nullptr) {
-        throw UnknownHost(host);
-    }
     struct sockaddr_in serv_addr;
     bzero(&serv_addr, sizeof serv_addr);
     serv_addr.sin_family = AF_INET;
-    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    if (inet_pton(AF_INET, host.c_str(), &serv_addr.sin_addr) != 1) {
+        throw UnknownHost(host);
+    }
     serv_addr.sin_port = htons(port);
 
     if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {

@@ -31,8 +31,8 @@ namespace {
     }
 
     void set_slot_to(std::map<slot, util::Address>& map, std::string address,
-                            std::vector<std::string>::iterator slot_range_begin,
-                            std::vector<std::string>::iterator slot_range_end)
+                     std::vector<std::string>::iterator slot_range_begin,
+                     std::vector<std::string>::iterator slot_range_end)
     {
         util::Address addr(util::Address::from_host_port(address));
         std::for_each(
@@ -63,6 +63,9 @@ namespace {
                           std::vector<std::string> line_cont(
                               util::split_str(line, " ", true));
                           if (line_cont.size() < 9) {
+                              return;
+                          }
+                          if (line_cont[2].find("fail") != std::string::npos) {
                               return;
                           }
                           set_slot_to(slot_map, line_cont[1],

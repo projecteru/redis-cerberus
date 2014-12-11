@@ -36,6 +36,6 @@ UnknownHost::UnknownHost(std::string const& host)
 {}
 
 IOError::IOError(std::string const& what, int errcode)
-    : std::runtime_error(what + " " + error_message(errcode))
+    : IOErrorBase(what + " " + error_message(errcode))
     , errcode(errcode)
 {}

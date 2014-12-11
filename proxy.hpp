@@ -24,6 +24,7 @@ namespace cerb {
         virtual ~Connection() {}
 
         virtual void triggered(Proxy* p, int events) = 0;
+        virtual void close();
     };
 
     class Acceptor
@@ -35,6 +36,7 @@ namespace cerb {
         {}
 
         void triggered(Proxy* p, int events);
+        void close();
     };
 
     class Server
@@ -56,6 +58,7 @@ namespace cerb {
 
         void push_client_command(util::sref<Command> cmd);
         void pop_client(Client* cli);
+        std::vector<util::sref<Command>> deliver_commands();
     };
 
     class Client
@@ -99,6 +102,7 @@ namespace cerb {
         SlotsMapUpdater(util::Address const& addr, Proxy* p);
 
         void triggered(Proxy* p, int events);
+        void close();
 
         bool success() const
         {
@@ -115,7 +119,7 @@ namespace cerb {
         SlotMap<Server> _server_map;
         std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
         int _active_slot_updaters_count;
-        std::vector<util::sref<Command>> _move_ask_command;
+        std::vector<util::sref<Command>> _retrying_commands;
 
         bool _should_update_slot_map() const;
         void _retrieve_slot_map();
@@ -140,6 +144,7 @@ namespace cerb {
         void run(int listen_port);
         void accept_from(int listen_fd);
         void shut_server(Server* svr);
+        void pop_client(Client* cli);
     };
 
 }

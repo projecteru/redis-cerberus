@@ -38,8 +38,26 @@ namespace cerb {
         explicit UnknownHost(std::string const& host);
     };
 
-    class IOError
+    class IOErrorBase
         : public std::runtime_error
+    {
+    protected:
+        explicit IOErrorBase(std::string const& what)
+            : std::runtime_error(what)
+        {}
+    };
+
+    class ConnectionHungUp
+        : public IOErrorBase
+    {
+    public:
+        ConnectionHungUp()
+            : IOErrorBase("Connection hung up")
+        {}
+    };
+
+    class IOError
+        : public IOErrorBase
     {
     public:
         int const errcode;

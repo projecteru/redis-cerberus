@@ -10,6 +10,8 @@
 
 namespace cerb {
 
+    int const CLUSTER_SLOT_COUNT = 16384;
+
     template <typename Type>
     class SlotMap {
         std::map<slot, util::Address> _slot_range_to_addr;
@@ -29,6 +31,12 @@ namespace cerb {
         {}
 
         SlotMap(SlotMap const&) = delete;
+
+        bool all_covered() const
+        {
+            return _slot_range_to_addr.find(CLUSTER_SLOT_COUNT) !=
+                _slot_range_to_addr.end();
+        }
 
         template <typename F>
         void iterate_addr(F f) const

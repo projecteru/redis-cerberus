@@ -14,9 +14,19 @@ using namespace cerb;
 
 static int const MAX_EVENTS = 1024;
 
+void Connection::close()
+{
+    delete this;
+}
+
 void Acceptor::triggered(Proxy* p, int)
 {
     p->accept_from(this->fd);
+}
+
+void Acceptor::close()
+{
+    LOG(FATAL) << "Exit on accept error.";
 }
 
 Server::Server(std::string const& host, int port, Proxy* p)
@@ -43,8 +53,7 @@ Server::~Server()
 void Server::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
-        delete this;
-        return;
+        throw ConnectionHungUp();
     }
     if (events & EPOLLIN) {
         try {
@@ -116,8 +125,7 @@ void Server::_recv_from()
     int n = this->_buffer.read(this->fd);
     if (n == 0) {
         LOG(INFO) << "Server hang up: " << this->fd;
-        delete this;
-        return;
+        throw ConnectionHungUp();
     }
     LOG(DEBUG) << "+read from " << this->fd
                << " buffer size " << this->_buffer.size()
@@ -173,6 +181,13 @@ void Server::pop_client(Client* cli)
                   });
 }
 
+std::vector<util::sref<Command>> Server::deliver_commands()
+{
+    _commands.insert(_commands.end(), _ready_commands.begin(),
+                     _ready_commands.end());
+    return std::move(_commands);
+}
+
 SlotsMapUpdater::SlotsMapUpdater(util::Address const& addr, Proxy* p)
     : Connection(new_stream_socket())
     , _proxy(p)
@@ -209,20 +224,20 @@ void SlotsMapUpdater::triggered(Proxy*, int events)
     if (events & EPOLLRDHUP) {
         LOG(ERROR) << "Failed to retrieve slot map from " << this->fd
                    << ". Closed because remote hung up.";
-        _proxy->notify_slot_map_updated();
+        throw ConnectionHungUp();
     }
-    try {
-        if (events & EPOLLIN) {
-            this->_recv_rsp();
-        }
-        if (events & EPOLLOUT) {
-            this->_send_cmd();
-        }
-    } catch (IOError& e) {
-        LOG(ERROR) << "Failed to retrive slot map from " << this->fd
-                   << ". Closed because: " << e.what();
-        _proxy->notify_slot_map_updated();
+    if (events & EPOLLIN) {
+        this->_recv_rsp();
     }
+    if (events & EPOLLOUT) {
+        this->_send_cmd();
+    }
+}
+
+void SlotsMapUpdater::close()
+{
+    epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
+    _proxy->notify_slot_map_updated();
 }
 
 Client::~Client()
@@ -232,35 +247,28 @@ Client::~Client()
                   {
                       svr->pop_client(this);
                   });
-    epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
+    _proxy->pop_client(this);
 }
 
 void Client::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
-        delete this;
-        return;
+        throw ConnectionHungUp();
     }
-    try {
-        if (events & EPOLLIN) {
-            try {
-                this->_recv_from();
-            } catch (BadRedisMessage& e) {
-                LOG(ERROR) << "Receive bad message from client " << this->fd
-                           << " because: " << e.what()
-                           << " dump buffer (before close): "
-                           << this->_buffer.to_string();
-                delete this;
-                return;
-            }
+    if (events & EPOLLIN) {
+        try {
+            this->_recv_from();
+        } catch (BadRedisMessage& e) {
+            LOG(ERROR) << "Receive bad message from client " << this->fd
+                       << " because: " << e.what()
+                       << " dump buffer (before close): "
+                       << this->_buffer.to_string();
+            delete this;
+            return;
         }
-        if (events & EPOLLOUT) {
-            this->_send_to();
-        }
-    } catch (IOError& e) {
-        LOG(ERROR) << "Client IO Error " << this->fd
-                   << ". Closed because: " << e.what();
-        delete this;
+    }
+    if (events & EPOLLOUT) {
+        this->_send_to();
     }
 }
 
@@ -319,8 +327,7 @@ void Client::_recv_from()
     int n = this->_buffer.read(this->fd);
     LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size();
     if (n == 0) {
-        delete this;
-        return;
+        throw ConnectionHungUp();
     }
     if (!(_awaiting_groups.empty() && _ready_groups.empty())) {
         return;
@@ -337,6 +344,11 @@ void Client::_process()
             ++_awaiting_count;
             for (auto ci = g->commands.begin(); ci != g->commands.end(); ++ci) {
                 Server* svr = this->_proxy->get_server_by_slot((*ci)->key_slot);
+                if (svr == nullptr) {
+                    LOG(ERROR) << "Cluster slot not covered " << (*ci)->key_slot;
+                    this->_proxy->retry_move_ask_command_later(**ci);
+                    continue;
+                }
                 this->_peers.insert(svr);
                 svr->push_client_command(**ci);
             }
@@ -415,7 +427,8 @@ void Proxy::_update_slot_map()
                 std::map<slot, util::Address> m(updater->deliver_map());
                 for (auto i = m.begin(); i != m.end(); ++i) {
                     if (i->second.host.empty()) {
-                        LOG(DEBUG) << "Discard result because address is empty string " << ':' << i->second.port;
+                        LOG(DEBUG) << "Discard result because address is empty string "
+                                   << ':' << i->second.port;
                         return false;
                     }
                 }
@@ -433,13 +446,18 @@ void Proxy::_set_slot_map(std::map<slot, util::Address> map)
     auto s(_server_map.set_map(std::move(map)));
     std::for_each(s.begin(), s.end(), [](Server* s) {delete s;});
 
-    if (_move_ask_command.empty()) {
+    if (!_server_map.all_covered()) {
+        LOG(ERROR) << "Map not covered all slots";
+        return _retrieve_slot_map();
+    }
+
+    if (_retrying_commands.empty()) {
         return;
     }
 
-    LOG(DEBUG) << "Retry MOVED or ASK: " << _move_ask_command.size();
+    LOG(DEBUG) << "Retry MOVED or ASK: " << _retrying_commands.size();
     std::set<Server*> svrs;
-    std::for_each(_move_ask_command.begin(), _move_ask_command.end(),
+    std::for_each(_retrying_commands.begin(), _retrying_commands.end(),
                   [&](util::sref<Command> cmd)
                   {
                       Server* svr = this->get_server_by_slot(cmd->key_slot);
@@ -447,7 +465,7 @@ void Proxy::_set_slot_map(std::map<slot, util::Address> map)
                       svr->push_client_command(cmd);
                       svrs.insert(svr);
                   });
-    _move_ask_command.clear();
+    _retrying_commands.clear();
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -493,13 +511,13 @@ void Proxy::notify_slot_map_updated()
 
 bool Proxy::_should_update_slot_map() const
 {
-    return _slot_updaters.empty() && !_move_ask_command.empty();
+    return _slot_updaters.empty() && !_retrying_commands.empty();
 }
 
 void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
 {
-    _move_ask_command.push_back(cmd);
-    LOG(DEBUG) << "A MOVED or ASK added for later retry - " << _move_ask_command.size();
+    _retrying_commands.push_back(cmd);
+    LOG(DEBUG) << "A MOVED or ASK added for later retry - " << _retrying_commands.size();
 }
 
 void Proxy::run(int listen_port)
@@ -532,12 +550,13 @@ void Proxy::_loop()
     }
 
     for (int i = 0; i < nfds; ++i) {
+        Connection* conn = static_cast<Connection*>(events[i].data.ptr);
         try {
-            Connection* conn = static_cast<Connection*>(events[i].data.ptr);
             conn->triggered(this, events[i].events);
-        } catch (cerb::IOError& e) {
-            LOG(FATAL) << " UNEXPECTED IOError " << e.what();
-            exit(1);
+        } catch (IOErrorBase& e) {
+            LOG(ERROR) << "IOError: " << e.what();
+            LOG(ERROR) << "Close connection to " << conn->fd << " in " << conn;
+            conn->close();
         }
     }
     if (this->_should_update_slot_map()) {
@@ -574,5 +593,17 @@ void Proxy::accept_from(int listen_fd)
 
 void Proxy::shut_server(Server* svr)
 {
+    std::vector<util::sref<Command>> c(svr->deliver_commands());
+    _retrying_commands.insert(_retrying_commands.end(), c.begin(), c.end());
     _server_map.erase_val(svr);
+}
+
+void Proxy::pop_client(Client* cli)
+{
+    std::remove_if(this->_retrying_commands.begin(),
+                   this->_retrying_commands.end(),
+                   [&](util::sref<Command>& cmd)
+                   {
+                       return cmd->group->client.is(cli);
+                   });
 }
