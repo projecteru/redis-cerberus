@@ -62,7 +62,7 @@ void cerb::connect_fd(std::string const& host, int port, int fd)
         if (errno == EINPROGRESS) {
             return;
         }
-        throw ConnectionRefused(host, errno);
+        throw ConnectionRefused(host, port, errno);
     }
     LOG(DEBUG) << "+connect " << fd;
 }

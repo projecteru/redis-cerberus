@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <sstream>
+#include <stdexcept>
 
 #include "string.h"
 
@@ -21,6 +22,17 @@ bool util::strnieq(std::string const& lhs, std::string const& rhs, ssize_type n)
 bool util::stristartswith(std::string const& s, std::string const& pre)
 {
     return strnieq(s, pre, pre.size());
+}
+
+int util::atoi(std::string const& a)
+{
+    std::istringstream ss(a);
+    int r;
+    ss >> std::ws >> r >> std::ws;
+    if (!ss.eof()) {
+        throw std::runtime_error("Invalid integer literal: " + a);
+    }
+    return r;
 }
 
 template <typename T>

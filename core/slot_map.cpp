@@ -25,7 +25,7 @@ namespace {
     void map_slot_to(std::map<slot, util::Address>& map,
                      std::string const& slot_rep, util::Address const& addr)
     {
-        slot s = atoi(slot_rep.data()) + 1;
+        slot s = util::atoi(slot_rep.data()) + 1;
         LOG(DEBUG) << "Map slot " << s << " to " << addr.host << ':' << addr.port;
         map.insert(std::make_pair(s, addr));
     }
