@@ -84,12 +84,10 @@ namespace cerb {
     };
 
     class ConnectionRefused
-        : public IOError
+        : public IOErrorBase
     {
     public:
-        ConnectionRefused(std::string const& host, int errcode)
-            : IOError("Connection refused/" + host, errcode)
-        {}
+        ConnectionRefused(std::string const& host, int port, int errcode);
     };
 
 }

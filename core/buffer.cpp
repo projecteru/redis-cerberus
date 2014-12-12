@@ -76,5 +76,5 @@ void Buffer::append_from(const_iterator first, const_iterator last)
 
 std::string Buffer::to_string() const
 {
-    return std::string((char const*)(_buffer.data()), size());
+    return std::string(reinterpret_cast<char const*>(_buffer.data()), size());
 }

@@ -2,6 +2,7 @@
 #include <sstream>
 
 #include "exceptions.hpp"
+#include "../utils/string.h"
 
 using namespace cerb;
 
@@ -38,4 +39,9 @@ UnknownHost::UnknownHost(std::string const& host)
 IOError::IOError(std::string const& what, int errcode)
     : IOErrorBase(what + " " + error_message(errcode))
     , errcode(errcode)
+{}
+
+ConnectionRefused::ConnectionRefused(std::string const& host, int port,
+                                     int errcode)
+    : IOErrorBase(error_message(errcode) + " " + host + ":" + util::str(port))
 {}

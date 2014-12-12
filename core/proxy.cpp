@@ -53,7 +53,7 @@ Server::~Server()
 void Server::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
-        throw ConnectionHungUp();
+        return this->close();
     }
     if (events & EPOLLIN) {
         try {
@@ -149,7 +149,10 @@ void Server::_recv_from()
     std::for_each(responses.begin(), responses.end(),
                   [&](util::sptr<Response>& rsp)
                   {
-                      rsp->rsp_to(*client_it++, util::mkref(*this->_proxy));
+                      util::sref<Command> c = *client_it++;
+                      if (c.not_nul()) {
+                          rsp->rsp_to(c, util::mkref(*this->_proxy));
+                      }
                   });
     this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
     struct epoll_event ev;
@@ -183,6 +186,11 @@ void Server::pop_client(Client* cli)
 
 std::vector<util::sref<Command>> Server::deliver_commands()
 {
+    std::remove_if(this->_ready_commands.begin(), this->_ready_commands.end(),
+                   [&](util::sref<Command> cmd)
+                   {
+                       return cmd.nul();
+                   });
     _commands.insert(_commands.end(), _ready_commands.begin(),
                      _ready_commands.end());
     return std::move(_commands);
@@ -253,7 +261,7 @@ Client::~Client()
 void Client::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
-        throw ConnectionHungUp();
+        return this->close();
     }
     if (events & EPOLLIN) {
         try {
@@ -327,7 +335,7 @@ void Client::_recv_from()
     int n = this->_buffer.read(this->fd);
     LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size();
     if (n == 0) {
-        throw ConnectionHungUp();
+        return this->close();
     }
     if (!(_awaiting_groups.empty() && _ready_groups.empty())) {
         return;
@@ -570,7 +578,9 @@ void Proxy::accept_from(int listen_fd)
     int cfd;
     struct sockaddr_in remote;
     socklen_t addrlen = sizeof remote;
-    while ((cfd = accept(listen_fd, (struct sockaddr*)&remote, &addrlen)) > 0) {
+    while ((cfd = accept(listen_fd, reinterpret_cast<struct sockaddr*>(&remote),
+                         &addrlen)) > 0)
+    {
         LOG(DEBUG) << "*accept " << cfd;
         set_nonblocking(cfd);
         set_tcpnodelay(cfd);
@@ -602,7 +612,7 @@ void Proxy::pop_client(Client* cli)
 {
     std::remove_if(this->_retrying_commands.begin(),
                    this->_retrying_commands.end(),
-                   [&](util::sref<Command>& cmd)
+                   [&](util::sref<Command> cmd)
                    {
                        return cmd->group->client.is(cli);
                    });

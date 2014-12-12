@@ -56,11 +56,13 @@ void cerb::connect_fd(std::string const& host, int port, int fd)
     }
     serv_addr.sin_port = htons(port);
 
-    if (connect(fd, (struct sockaddr*)&serv_addr, sizeof serv_addr) < 0) {
+    if (connect(fd, reinterpret_cast<struct sockaddr*>(&serv_addr),
+                sizeof serv_addr) < 0)
+    {
         if (errno == EINPROGRESS) {
             return;
         }
-        throw ConnectionRefused(host, errno);
+        throw ConnectionRefused(host, port, errno);
     }
     LOG(DEBUG) << "+connect " << fd;
 }
@@ -78,7 +80,8 @@ void cerb::bind_to(int fd, int port)
     local.sin_family = AF_INET;
     local.sin_addr.s_addr = htonl(INADDR_ANY);
     local.sin_port = htons(port);
-    if (bind(fd, (struct sockaddr*)&local, sizeof local) < 0) {
+    if (bind(fd, reinterpret_cast<struct sockaddr*>(&local), sizeof local) < 0)
+    {
         throw SystemError("bind", errno);
     }
     ::listen(fd, 20);
