@@ -79,7 +79,6 @@ namespace cerb {
         void buffer_ready(std::vector<struct iovec>& iov);
         void copy_from(const_iterator first, const_iterator last);
         void append_from(const_iterator first, const_iterator last);
-
         std::string to_string() const;
     };
 

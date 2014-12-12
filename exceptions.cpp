@@ -26,7 +26,16 @@ static std::string error_message(int errcode)
     return std::string(strerror_r(errcode, message, 256));
 }
 
-IOError::IOError(std::string const& what, int errcode)
+SystemError::SystemError(std::string const& what, int errcode)
     : std::runtime_error(what + " " + error_message(errcode))
+{}
+
+UnknownHost::UnknownHost(std::string const& host)
+    : std::runtime_error("Unknown host: " +
+                         (host.empty() ? "(empty string)" : host))
+{}
+
+IOError::IOError(std::string const& what, int errcode)
+    : IOErrorBase(what + " " + error_message(errcode))
     , errcode(errcode)
 {}

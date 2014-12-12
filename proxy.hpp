@@ -2,30 +2,29 @@
 #define __CERBERUS_PROXY_HPP__
 
 #include <vector>
-#include <set>
 
 #include "utils/pointer.h"
 #include "common.hpp"
 #include "command.hpp"
 #include "slot_map.hpp"
+#include "fdutil.hpp"
 
 namespace cerb {
 
     class Proxy;
 
-    class Connection {
+    class Connection
+        : public FDWrapper
+    {
     public:
-        int fd;
-
         explicit Connection(int fd)
-            : fd(fd)
+            : FDWrapper(fd)
         {}
 
-        Connection(Connection const&) = delete;
-
-        virtual ~Connection();
+        virtual ~Connection() {}
 
         virtual void triggered(Proxy* p, int events) = 0;
+        virtual void close();
     };
 
     class Acceptor
@@ -37,6 +36,7 @@ namespace cerb {
         {}
 
         void triggered(Proxy* p, int events);
+        void close();
     };
 
     class Server
@@ -58,6 +58,7 @@ namespace cerb {
 
         void push_client_command(util::sref<Command> cmd);
         void pop_client(Client* cli);
+        std::vector<util::sref<Command>> deliver_commands();
     };
 
     class Client
@@ -86,14 +87,49 @@ namespace cerb {
 
         void triggered(Proxy* p, int events);
         void group_responsed();
+        void add_peer(Server* svr);
+    };
+
+    class SlotsMapUpdater
+        : public Connection
+    {
+        Proxy* _proxy;
+        std::map<slot, util::Address> _updated_map;
+
+        void _send_cmd();
+        void _recv_rsp();
+    public:
+        SlotsMapUpdater(util::Address const& addr, Proxy* p);
+
+        void triggered(Proxy* p, int events);
+        void close();
+
+        bool success() const
+        {
+            return !_updated_map.empty();
+        }
+
+        std::map<slot, util::Address> deliver_map()
+        {
+            return std::move(_updated_map);
+        }
     };
 
     class Proxy {
         SlotMap<Server> _server_map;
+        std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
+        int _active_slot_updaters_count;
+        std::vector<util::sref<Command>> _retrying_commands;
+
+        bool _should_update_slot_map() const;
+        void _retrieve_slot_map();
+        void _set_slot_map(std::map<slot, util::Address> map);
+        void _update_slot_map();
+        void _loop();
     public:
         int epfd;
 
-        explicit Proxy(std::map<slot, Address> slot_map);
+        explicit Proxy(util::Address const& remote);
         ~Proxy();
 
         Proxy(Proxy const&) = delete;
@@ -103,15 +139,12 @@ namespace cerb {
             return _server_map.get_by_slot(key_slot);
         }
 
-        void set_slot_map(std::map<slot, Address> map)
-        {
-            _server_map.set_map(std::move(map));
-        }
-
-        void run(int port);
+        void notify_slot_map_updated();
+        void retry_move_ask_command_later(util::sref<Command> cmd);
+        void run(int listen_port);
         void accept_from(int listen_fd);
-        void shut_client(Client* cli);
         void shut_server(Server* svr);
+        void pop_client(Client* cli);
     };
 
 }

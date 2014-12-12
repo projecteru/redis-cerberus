@@ -7,8 +7,6 @@
 #include "exceptions.hpp"
 #include "proxy.hpp"
 
-#include <cstdio>
-
 using namespace cerb;
 
 namespace {
@@ -432,7 +430,7 @@ namespace {
 
         void on_command_arr_after_first_element(Buffer::iterator it)
         {
-            this->on_byte = [&](byte) {};
+            this->on_byte = [](byte) {};
             this->on_element =
                 [&](Buffer::iterator i)
                 {
@@ -508,9 +506,9 @@ namespace {
 
 }
 
-void Command::copy_response(Buffer::iterator begin, Buffer::iterator end)
+void Command::copy_response(Buffer rsp)
 {
-    this->buffer.copy_from(begin, end);
+    this->buffer = std::move(rsp);
     this->group->command_responsed();
 }
 

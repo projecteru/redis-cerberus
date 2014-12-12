@@ -3,37 +3,24 @@
 
 #include "string.h"
 
-std::string util::replace_all(std::string src
-                            , std::string const& origin_text
-                            , std::string const& replacement)
+using namespace util;
+
+bool util::strnieq(std::string const& lhs, std::string const& rhs, ssize_type n)
 {
-    std::string::size_type origin_length = origin_text.size();
-    std::string::size_type replace_length = replacement.size();
-    for (std::string::size_type occurrence = src.find(origin_text);
-         std::string::npos != occurrence;
-         occurrence = src.find(origin_text, occurrence))
-    {
-        src.replace(occurrence, origin_length, replacement);
-        occurrence += replace_length;
+    for (ssize_type i = 0; i < n; ++i) {
+        if (lhs.size() == i || rhs.size() == i) {
+            return lhs.size() == rhs.size();
+        }
+        if (std::toupper(lhs[i]) != std::toupper(rhs[i])) {
+            return false;
+        }
     }
-    return src;
+    return true;
 }
 
-std::string util::join(std::string const& sep,
-                       std::vector<std::string> const& values)
+bool util::stristartswith(std::string const& s, std::string const& pre)
 {
-    if (values.empty()) {
-        return "";
-    }
-    std::string result(values[0]);
-    std::for_each(++values.begin()
-                , values.end()
-                , [&](std::string const& v)
-                  {
-                      result += sep;
-                      result += v;
-                  });
-    return result;
+    return strnieq(s, pre, pre.size());
 }
 
 template <typename T>
@@ -74,9 +61,9 @@ std::string util::str(void const* p)
     return str_from_something(p);
 }
 
-std::vector<std::string> util::split(std::string const& str,
-                                     std::string const& delimiters,
-                                     bool trimEmpty)
+std::vector<std::string> util::split_str(std::string const& str,
+                                         std::string const& delimiters,
+                                         bool trimEmpty)
 {
     std::vector<std::string> r;
     std::string::size_type lastPos = 0;

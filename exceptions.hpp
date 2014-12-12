@@ -15,13 +15,63 @@ namespace cerb {
         explicit BadRedisMessage(std::string const& what);
     };
 
-    class IOError
+    class BadClusterStatus
         : public std::runtime_error
+    {
+    public:
+        explicit BadClusterStatus(std::string const& what)
+            : std::runtime_error(what)
+        {}
+    };
+
+    class SystemError
+        : public std::runtime_error
+    {
+    public:
+        SystemError(std::string const& what, int errcode);
+    };
+
+    class UnknownHost
+        : public std::runtime_error
+    {
+    public:
+        explicit UnknownHost(std::string const& host);
+    };
+
+    class IOErrorBase
+        : public std::runtime_error
+    {
+    protected:
+        explicit IOErrorBase(std::string const& what)
+            : std::runtime_error(what)
+        {}
+    };
+
+    class ConnectionHungUp
+        : public IOErrorBase
+    {
+    public:
+        ConnectionHungUp()
+            : IOErrorBase("Connection hung up")
+        {}
+    };
+
+    class IOError
+        : public IOErrorBase
     {
     public:
         int const errcode;
 
         IOError(std::string const& what, int errcode);
+    };
+
+    class SocketAcceptError
+        : public IOError
+    {
+    public:
+        explicit SocketAcceptError(int errcode)
+            : IOError("accept", errcode)
+        {}
     };
 
     class SocketCreateError
@@ -30,6 +80,15 @@ namespace cerb {
     public:
         SocketCreateError(std::string const& what, int errcode)
             : IOError(what, errcode)
+        {}
+    };
+
+    class ConnectionRefused
+        : public IOError
+    {
+    public:
+        ConnectionRefused(std::string const& host, int errcode)
+            : IOError("Connection refused/" + host, errcode)
         {}
     };
 

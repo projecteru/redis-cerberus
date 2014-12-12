@@ -2,14 +2,15 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <execinfo.h>
 
 #include "proxy.hpp"
 #include "concurrence.hpp"
 #include "utils/logging.hpp"
 
-int const PORT = 8889;
+static int const PORT = 8889;
 
-void exit_on_int(int)
+static void exit_on_int(int)
 {
     LOG(INFO) << "C-c Exit.";
     exit(0);
@@ -19,7 +20,7 @@ int main(int argc, char* argv[])
 {
     if (argc == 1) {
         std::cerr << "Usage:" << std::endl;
-        std::cerr << "    cerberus NODES_FILE" << std::endl;
+        std::cerr << "    cerberus NODE_HOST:PORT" << std::endl;
         return 1;
     }
     signal(SIGINT, exit_on_int);

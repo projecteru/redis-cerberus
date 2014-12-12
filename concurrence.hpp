@@ -15,7 +15,7 @@ namespace cerb {
         util::sptr<Proxy> _proxy;
         util::sptr<std::thread> _thread;
     public:
-        ListenThread(int listen_port, std::string const& nodes_file);
+        ListenThread(int listen_port, std::string const& remote);
         ListenThread(ListenThread const&) = delete;
 
         ListenThread(ListenThread&& rhs)

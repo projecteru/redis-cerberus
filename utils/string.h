@@ -6,11 +6,10 @@
 
 namespace util {
 
-    std::string replace_all(std::string src
-                          , std::string const& origin_text
-                          , std::string const& replacement);
-    std::string join(std::string const& sep,
-                     std::vector<std::string> const& values);
+    typedef std::string::size_type ssize_type;
+
+    bool strnieq(std::string const& lhs, std::string const& rhs, ssize_type n);
+    bool stristartswith(std::string const& s, std::string const& pre);
 
     std::string str(int i);
     std::string str(long i);
@@ -19,9 +18,9 @@ namespace util {
     std::string str(bool b);
     std::string str(void const* p);
 
-    std::vector<std::string> split(std::string const& str,
-                                   std::string const& delimiters=" ",
-                                   bool trimEmpty=false);
+    std::vector<std::string> split_str(std::string const& str,
+                                       std::string const& delimiters=" ",
+                                       bool trimEmpty=false);
 
 }
 
