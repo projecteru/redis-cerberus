@@ -5,6 +5,10 @@ Build
 
     make
 
+or compile with g艹
+
+    make COMPILER=g++
+
 Run
 ===
 

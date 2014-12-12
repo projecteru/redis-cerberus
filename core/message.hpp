@@ -141,7 +141,7 @@ namespace cerb { namespace msg {
 
     template <typename InputIterator, typename FinalType>
     class MessageSplitterBase {
-    protected:
+    public:
         bool _interrupted;
         std::vector<InputIterator> _split_points;
         std::stack<rint> _nested_array_element_count;
