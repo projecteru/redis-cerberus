@@ -4,8 +4,7 @@
 #include <iostream>
 #include <execinfo.h>
 
-#include "proxy.hpp"
-#include "concurrence.hpp"
+#include "core/concurrence.hpp"
 #include "utils/logging.hpp"
 
 static int const PORT = 8889;

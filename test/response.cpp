@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../response.hpp"
+#include "../core/response.hpp"
 
 using cerb::Buffer;
 using cerb::Response;

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../message.hpp"
+#include "../core/message.hpp"
 
 using cerb::rint;
 using cerb::byte;

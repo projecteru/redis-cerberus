@@ -2,20 +2,19 @@ WORKDIR=.
 
 include misc/mf-template.mk
 
-all:a.d objs utilities
-	$(LINK) *.o utils/*.o \
+all:main.d core_objs utilities
+	$(LINK) main.o utils/*.o core/*.o \
 	        $(LIBS) \
 	     -o cerberus
 
-runtest:objs utils
+runtest:core_objs utilities
 	make -f test/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
-
-objs:concurrence.d buffer.d command.d response.d slot_map.d proxy.d \
-     exceptions.d fdutil.d
-	true
 
 utilities:
 	make -f utils/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
+
+core_objs:
+	make -f core/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
 
 clean:
 	rm -f tmp.*

@@ -53,7 +53,7 @@ Server::~Server()
 void Server::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
-        throw ConnectionHungUp();
+        return this->close();
     }
     if (events & EPOLLIN) {
         try {
@@ -261,7 +261,7 @@ Client::~Client()
 void Client::triggered(Proxy*, int events)
 {
     if (events & EPOLLRDHUP) {
-        throw ConnectionHungUp();
+        return this->close();
     }
     if (events & EPOLLIN) {
         try {
@@ -335,7 +335,7 @@ void Client::_recv_from()
     int n = this->_buffer.read(this->fd);
     LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size();
     if (n == 0) {
-        throw ConnectionHungUp();
+        return this->close();
     }
     if (!(_awaiting_groups.empty() && _ready_groups.empty())) {
         return;
@@ -578,7 +578,9 @@ void Proxy::accept_from(int listen_fd)
     int cfd;
     struct sockaddr_in remote;
     socklen_t addrlen = sizeof remote;
-    while ((cfd = accept(listen_fd, (struct sockaddr*)&remote, &addrlen)) > 0) {
+    while ((cfd = accept(listen_fd, reinterpret_cast<struct sockaddr*>(&remote),
+                         &addrlen)) > 0)
+    {
         LOG(DEBUG) << "*accept " << cfd;
         set_nonblocking(cfd);
         set_tcpnodelay(cfd);
