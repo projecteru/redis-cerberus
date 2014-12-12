@@ -1,10 +1,16 @@
+ifdef STATIC_LINK
+	SLINK=-static-libstdc++
+else
+	SLINK=
+endif
+
 WORKDIR=.
 
 include misc/mf-template.mk
 
 all:main.d core_objs utilities
 	$(LINK) main.o utils/*.o core/*.o \
-	        $(LIBS) \
+	        $(LIBS) $(SLINK) \
 	     -o cerberus
 
 runtest:core_objs utilities

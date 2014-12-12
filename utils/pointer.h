@@ -92,6 +92,11 @@ namespace util {
             return util::id(_ptr);
         }
 
+        RawType cp() const
+        {
+            return *_ptr;
+        }
+
         void reset()
         {
             _ptr = nullptr;
@@ -140,6 +145,11 @@ namespace util {
         std::string str() const
         {
             return id().str();
+        }
+
+        RawType cp() const
+        {
+            return *base_type::get();
         }
 
         bool nul() const

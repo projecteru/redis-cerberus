@@ -9,6 +9,10 @@ or compile with g艹
 
     make COMPILER=g++
 
+To link libstdc++ statically, use
+
+    make STATIC_LINK=1
+
 Run
 ===
 
