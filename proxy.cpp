@@ -149,7 +149,10 @@ void Server::_recv_from()
     std::for_each(responses.begin(), responses.end(),
                   [&](util::sptr<Response>& rsp)
                   {
-                      rsp->rsp_to(*client_it++, util::mkref(*this->_proxy));
+                      util::sref<Command> c = *client_it++;
+                      if (c.not_nul()) {
+                          rsp->rsp_to(c, util::mkref(*this->_proxy));
+                      }
                   });
     this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
     struct epoll_event ev;
@@ -183,6 +186,11 @@ void Server::pop_client(Client* cli)
 
 std::vector<util::sref<Command>> Server::deliver_commands()
 {
+    std::remove_if(this->_ready_commands.begin(), this->_ready_commands.end(),
+                   [&](util::sref<Command> cmd)
+                   {
+                       return cmd.nul();
+                   });
     _commands.insert(_commands.end(), _ready_commands.begin(),
                      _ready_commands.end());
     return std::move(_commands);
@@ -602,7 +610,7 @@ void Proxy::pop_client(Client* cli)
 {
     std::remove_if(this->_retrying_commands.begin(),
                    this->_retrying_commands.end(),
-                   [&](util::sref<Command>& cmd)
+                   [&](util::sref<Command> cmd)
                    {
                        return cmd->group->client.is(cli);
                    });
