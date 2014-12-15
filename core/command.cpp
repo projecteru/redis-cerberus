@@ -171,15 +171,19 @@ namespace {
         }
     };
 
-    class MGetCommandParser
+    class EachKeyCommandParser
         : public SpecialCommandParser
     {
+        slot last_key_slot;
+        std::string const command_name;
         std::vector<Buffer::iterator> keys_split_points;
         std::vector<slot> keys_slots;
-        slot last_key_slot;
+
+        virtual Buffer command_header() const = 0;
     public:
-        explicit MGetCommandParser(Buffer::iterator arg_begin)
+        EachKeyCommandParser(Buffer::iterator arg_begin, std::string cmd)
             : last_key_slot(0)
+            , command_name(std::move(cmd))
         {
             keys_split_points.push_back(arg_begin);
         }
@@ -205,18 +209,45 @@ namespace {
                     [&](util::sref<CommandGroup> g)
                     {
                         return util::mkptr(new DirectResponseCommand(
-                            "-ERR wrong number of arguments for 'mget' command\r\n", g));
+                            "-ERR wrong number of arguments for '" +
+                            command_name + "' command\r\n", g));
                     });
             }
             util::sptr<CommandGroup> g(new CommandGroup(c));
             for (unsigned i = 0; i < keys_slots.size(); ++i) {
-                Buffer b(Buffer::from_string("*2\r\n$3\r\nGET\r\n"));
+                Buffer b(command_header());
                 b.append_from(keys_split_points[i], keys_split_points[i + 1]);
                 g->append_command(util::mkptr(
                     new Command(std::move(b), *g, true, keys_slots[i])));
             }
             return std::move(g);
         }
+    };
+
+    class MGetCommandParser
+        : public EachKeyCommandParser
+    {
+        Buffer command_header() const
+        {
+            return Buffer::from_string("*2\r\n$3\r\nGET\r\n");
+        }
+    public:
+        explicit MGetCommandParser(Buffer::iterator arg_begin)
+            : EachKeyCommandParser(arg_begin, "mget")
+        {}
+    };
+
+    class DelCommandParser
+        : public EachKeyCommandParser
+    {
+        Buffer command_header() const
+        {
+            return Buffer::from_string("*2\r\n$3\r\nDEL\r\n");
+        }
+    public:
+        explicit DelCommandParser(Buffer::iterator arg_begin)
+            : EachKeyCommandParser(arg_begin, "del")
+        {}
     };
 
     class MSetCommandParser
@@ -304,6 +335,11 @@ namespace {
             [](Buffer::iterator arg_start)
             {
                 return util::mkptr(new PingCommandParser(arg_start));
+            }},
+        {"DEL",
+            [](Buffer::iterator arg_start)
+            {
+                return util::mkptr(new DelCommandParser(arg_start));
             }},
         {"MGET",
             [](Buffer::iterator arg_start)
