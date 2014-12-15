@@ -23,19 +23,21 @@ namespace cerb {
 
         virtual ~Connection() {}
 
-        virtual void triggered(Proxy* p, int events) = 0;
+        virtual void triggered(int events) = 0;
         virtual void close();
     };
 
     class Acceptor
         : public Connection
     {
+        Proxy* const _proxy;
     public:
-        explicit Acceptor(int fd)
+        Acceptor(int fd, Proxy* p)
             : Connection(fd)
+            , _proxy(p)
         {}
 
-        void triggered(Proxy* p, int events);
+        void triggered(int events);
         void close();
     };
 
@@ -54,7 +56,7 @@ namespace cerb {
         Server(std::string const& host, int port, Proxy* p);
         ~Server();
 
-        void triggered(Proxy* p, int events);
+        void triggered(int events);
 
         void push_client_command(util::sref<Command> cmd);
         void pop_client(Client* cli);
@@ -85,7 +87,7 @@ namespace cerb {
 
         ~Client();
 
-        void triggered(Proxy* p, int events);
+        void triggered(int events);
         void group_responsed();
         void add_peer(Server* svr);
     };
@@ -101,7 +103,7 @@ namespace cerb {
     public:
         SlotsMapUpdater(util::Address const& addr, Proxy* p);
 
-        void triggered(Proxy* p, int events);
+        void triggered(int events);
         void close();
 
         bool success() const

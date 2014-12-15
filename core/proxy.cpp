@@ -19,14 +19,14 @@ void Connection::close()
     delete this;
 }
 
-void Acceptor::triggered(Proxy* p, int)
+void Acceptor::triggered(int)
 {
-    p->accept_from(this->fd);
+    _proxy->accept_from(this->fd);
 }
 
 void Acceptor::close()
 {
-    LOG(FATAL) << "Exit on accept error.";
+    LOG(ERROR) << "Accept error.";
 }
 
 Server::Server(std::string const& host, int port, Proxy* p)
@@ -50,7 +50,7 @@ Server::~Server()
     epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
 }
 
-void Server::triggered(Proxy*, int events)
+void Server::triggered(int events)
 {
     if (events & EPOLLRDHUP) {
         return this->close();
@@ -227,7 +227,7 @@ void SlotsMapUpdater::_recv_rsp()
     _proxy->notify_slot_map_updated();
 }
 
-void SlotsMapUpdater::triggered(Proxy*, int events)
+void SlotsMapUpdater::triggered(int events)
 {
     if (events & EPOLLRDHUP) {
         LOG(ERROR) << "Failed to retrieve slot map from " << this->fd
@@ -258,7 +258,7 @@ Client::~Client()
     _proxy->pop_client(this);
 }
 
-void Client::triggered(Proxy*, int events)
+void Client::triggered(int events)
 {
     if (events & EPOLLRDHUP) {
         return this->close();
@@ -530,7 +530,7 @@ void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
 
 void Proxy::run(int listen_port)
 {
-    cerb::Acceptor acc(new_stream_socket());
+    cerb::Acceptor acc(new_stream_socket(), this);
     set_nonblocking(acc.fd);
     bind_to(acc.fd, listen_port);
 
@@ -560,7 +560,7 @@ void Proxy::_loop()
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
         try {
-            conn->triggered(this, events[i].events);
+            conn->triggered(events[i].events);
         } catch (IOErrorBase& e) {
             LOG(ERROR) << "IOError: " << e.what();
             LOG(ERROR) << "Close connection to " << conn->fd << " in " << conn;
