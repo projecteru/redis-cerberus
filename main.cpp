@@ -9,6 +9,7 @@
 #include "core/concurrence.hpp"
 #include "utils/logging.hpp"
 #include "utils/string.h"
+#include "backtracpp/sig-handler.h"
 
 namespace {
 
@@ -93,6 +94,7 @@ int main(int argc, char* argv[])
 
     signal(SIGINT, exit_on_int);
     logging::init();
+    trac::trace_on_seg_fault();
 
     try {
         run(config);

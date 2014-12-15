@@ -2,6 +2,7 @@ cerberus
 *.o
 *.pyc
 *.tmp
+tmp.*
 dump.*
 *.aof
 libs
