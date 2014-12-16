@@ -80,6 +80,7 @@ namespace cerb {
         void copy_from(const_iterator first, const_iterator last);
         void append_from(const_iterator first, const_iterator last);
         std::string to_string() const;
+        bool same_as_string(std::string const& s) const;
     };
 
 }

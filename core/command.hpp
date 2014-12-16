@@ -1,6 +1,7 @@
 #ifndef __CERBERUS_COMMAND_HPP__
 #define __CERBERUS_COMMAND_HPP__
 
+#include <set>
 #include <vector>
 
 #include "utils/pointer.h"
@@ -10,26 +11,31 @@ struct iovec;
 
 namespace cerb {
 
+    class Proxy;
     class Client;
+    class Server;
     class CommandGroup;
 
     class Command {
-        static slot const SLOT_MASK = 0x3FFF;
     public:
         Buffer buffer;
-        util::sref<CommandGroup> group;
-        bool need_send;
-        slot const key_slot;
+        util::sref<CommandGroup> const group;
+        bool const need_send;
 
         virtual ~Command() {}
 
-        void copy_response(Buffer rsp);
+        virtual Server* select_server(Proxy* proxy) = 0;
+        virtual void copy_response(Buffer rsp, bool error);
 
-        Command(Buffer b, util::sref<CommandGroup> g, bool n, slot ks)
+        Command(Buffer b, util::sref<CommandGroup> g, bool s)
             : buffer(std::move(b))
             , group(g)
-            , need_send(n)
-            , key_slot(ks & SLOT_MASK)
+            , need_send(s)
+        {}
+
+        Command(util::sref<CommandGroup> g, bool s)
+            : group(g)
+            , need_send(s)
         {}
 
         Command(Command const&) = delete;

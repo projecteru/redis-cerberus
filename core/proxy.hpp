@@ -90,6 +90,7 @@ namespace cerb {
         void triggered(int events);
         void group_responsed();
         void add_peer(Server* svr);
+        void reactivate(util::sref<Command> cmd);
     };
 
     class SlotsMapUpdater

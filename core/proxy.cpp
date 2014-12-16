@@ -88,6 +88,7 @@ void Server::_send_to()
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
                   [&](util::sref<Command>& cmd)
                   {
+                      LOG(DEBUG) << "  # " << cmd->buffer.to_string();
                       cmd->buffer.buffer_ready(iov);
                       n += cmd->buffer.size();
                   });
@@ -343,22 +344,33 @@ void Client::_recv_from()
     _process();
 }
 
+void Client::reactivate(util::sref<Command> cmd)
+{
+    Server* s = cmd->select_server(this->_proxy);
+    if (s == nullptr) {
+        return;
+    }
+    LOG(DEBUG) << "reactivated " << s->fd;
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+    ev.data.ptr = s;
+    if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, s->fd, &ev) == -1) {
+        throw SystemError("epoll_ctl+modio", errno);
+    }
+}
+
 void Client::_process()
 {
-    auto messages(split_client_command(this->_buffer, util::mkref(*this)));
-    for (auto i = messages.begin(); i != messages.end(); ++i) {
+    auto commands(split_client_command(this->_buffer, util::mkref(*this)));
+    for (auto i = commands.begin(); i != commands.end(); ++i) {
         util::sptr<CommandGroup> g(std::move(*i));
         if (g->awaiting_count != 0) {
             ++_awaiting_count;
             for (auto ci = g->commands.begin(); ci != g->commands.end(); ++ci) {
-                Server* svr = this->_proxy->get_server_by_slot((*ci)->key_slot);
-                if (svr == nullptr) {
-                    LOG(ERROR) << "Cluster slot not covered " << (*ci)->key_slot;
-                    this->_proxy->retry_move_ask_command_later(**ci);
-                    continue;
+                Server* s = (*ci)->select_server(this->_proxy);
+                if (s != nullptr) {
+                    this->_peers.insert(s);
                 }
-                this->_peers.insert(svr);
-                svr->push_client_command(**ci);
             }
         }
         _awaiting_groups.push_back(std::move(g));
@@ -468,10 +480,12 @@ void Proxy::_set_slot_map(std::map<slot, util::Address> map)
     std::for_each(_retrying_commands.begin(), _retrying_commands.end(),
                   [&](util::sref<Command> cmd)
                   {
-                      Server* svr = this->get_server_by_slot(cmd->key_slot);
-                      cmd->group->client->add_peer(svr);
-                      svr->push_client_command(cmd);
-                      svrs.insert(svr);
+                      Server* s = cmd->select_server(this);
+                      if (s == nullptr) {
+                          return;
+                      }
+                      cmd->group->client->add_peer(s);
+                      svrs.insert(s);
                   });
     _retrying_commands.clear();
 

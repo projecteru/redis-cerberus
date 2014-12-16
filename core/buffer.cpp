@@ -78,3 +78,15 @@ std::string Buffer::to_string() const
 {
     return std::string(reinterpret_cast<char const*>(_buffer.data()), size());
 }
+
+bool Buffer::same_as_string(std::string const& s) const
+{
+    if (size() != s.size()) {
+        return false;
+    }
+    std::string::size_type i = 0;
+    return cend() == std::find_if(cbegin(), cend(), [&](byte b)
+                                                    {
+                                                        return b != s[i++];
+                                                    });
+}

@@ -6,6 +6,7 @@
 #include "command.hpp"
 #include "exceptions.hpp"
 #include "proxy.hpp"
+#include "utils/logging.hpp"
 
 using namespace cerb;
 
@@ -51,6 +52,59 @@ namespace {
         return (crc << 8) ^ CRC16TAB[((crc >> 8) ^ next_byte) & 0xFF];
     }
 
+    Server* select_server_for(Proxy* proxy, Command* cmd, slot key_slot)
+    {
+        Server* svr = proxy->get_server_by_slot(key_slot);
+        if (svr == nullptr) {
+            LOG(ERROR) << "Cluster slot not covered " << key_slot;
+            proxy->retry_move_ask_command_later(util::mkref(*cmd));
+            return nullptr;
+        }
+        svr->push_client_command(util::mkref(*cmd));
+        return svr;
+    }
+
+    class OneSlotCommand
+        : public Command
+    {
+        slot const key_slot;
+    public:
+        OneSlotCommand(Buffer b, util::sref<CommandGroup> g, slot ks)
+            : Command(std::move(b), g, true)
+            , key_slot(ks & (CLUSTER_SLOT_COUNT - 1))
+        {}
+
+        Server* select_server(Proxy* proxy)
+        {
+            return ::select_server_for(proxy, this, this->key_slot);
+        }
+    };
+
+    class MultiStepsCommand
+        : public Command
+    {
+    public:
+        slot current_key_slot;
+        std::function<void(Buffer, bool)> on_rsp;
+
+        MultiStepsCommand(util::sref<CommandGroup> group, slot s,
+                          std::function<void(Buffer, bool)> r)
+            : Command(group, true)
+            , current_key_slot(s)
+            , on_rsp(std::move(r))
+        {}
+
+        Server* select_server(Proxy* proxy)
+        {
+            return ::select_server_for(proxy, this, this->current_key_slot);
+        }
+
+        void copy_response(Buffer rsp, bool error)
+        {
+            on_rsp(std::move(rsp), error);
+        }
+    };
+
     class DirectResponseCommand
         : public Command
     {
@@ -64,8 +118,13 @@ namespace {
         {}
 
         DirectResponseCommand(Buffer b, util::sref<CommandGroup> g)
-            : Command(std::move(b), g, false, 0xFFFF)
+            : Command(std::move(b), g, false)
         {}
+
+        Server* select_server(Proxy*)
+        {
+            return nullptr;
+        }
     };
 
     std::map<std::string, std::string> const QUICK_RSP({
@@ -218,7 +277,7 @@ namespace {
                 Buffer b(command_header());
                 b.append_from(keys_split_points[i], keys_split_points[i + 1]);
                 g->append_command(util::mkptr(
-                    new Command(std::move(b), *g, true, keys_slots[i])));
+                    new OneSlotCommand(std::move(b), *g, keys_slots[i])));
             }
             return std::move(g);
         }
@@ -320,42 +379,184 @@ namespace {
             for (unsigned i = 0; i < keys_slots.size(); ++i) {
                 Buffer b(Buffer::from_string("*3\r\n$3\r\nSET\r\n"));
                 b.append_from(kv_split_points[i * 2], kv_split_points[i * 2 + 2]);
-                g->append_command(util::mkptr(new Command(std::move(b), *g, true,
-                                  keys_slots[i])));
+                g->append_command(util::mkptr(new OneSlotCommand(
+                    std::move(b), *g, keys_slots[i])));
             }
             return std::move(g);
         }
     };
     std::string const MSetCommandParser::MSetCommandGroup::R("+OK\r\n");
 
+    class RenameCommandParser
+        : public SpecialCommandParser
+    {
+        class RenameCommand
+            : public MultiStepsCommand
+        {
+            Buffer old_key;
+            Buffer new_key;
+            slot old_key_slot;
+            slot new_key_slot;
+        public:
+            RenameCommand(Buffer old_key, Buffer new_key, slot old_key_slot,
+                          slot new_key_slot, util::sref<CommandGroup> group)
+                : MultiStepsCommand(group, old_key_slot,
+                                    [&](Buffer r, bool e)
+                                    {
+                                        return this->rsp_get(std::move(r), e);
+                                    })
+                , old_key(std::move(old_key))
+                , new_key(std::move(new_key))
+                , old_key_slot(old_key_slot)
+                , new_key_slot(new_key_slot)
+            {
+                this->buffer = Buffer::from_string("*2\r\n$3\r\nGET\r\n");
+                this->buffer.append_from(this->old_key.begin(), this->old_key.end());
+            }
+
+            void rsp_get(Buffer rsp, bool error)
+            {
+                if (error) {
+                    this->buffer = std::move(rsp);
+                    return this->group->command_responsed();
+                }
+                if (rsp.same_as_string("$-1\r\n")) {
+                    this->buffer = Buffer::from_string(
+                        "-ERR no such key\r\n");
+                    return this->group->command_responsed();
+                }
+                this->buffer = Buffer::from_string("*3\r\n$3\r\nSET\r\n");
+                this->buffer.append_from(new_key.begin(), new_key.end());
+                this->buffer.append_from(rsp.begin(), rsp.end());
+                this->current_key_slot = new_key_slot;
+                this->on_rsp =
+                    [&](Buffer rsp, bool error)
+                    {
+                        if (error) {
+                            this->buffer = std::move(rsp);
+                            return this->group->command_responsed();
+                        }
+                        rsp_set();
+                    };
+                this->group->client->reactivate(util::mkref(*this));
+            }
+
+            void rsp_set()
+            {
+                this->buffer = Buffer::from_string("*2\r\n$3\r\nDEL\r\n");
+                this->buffer.append_from(old_key.begin(), old_key.end());
+                this->current_key_slot = old_key_slot;
+                this->on_rsp =
+                    [&](Buffer, bool)
+                    {
+                        this->buffer = Buffer::from_string("+OK\r\n");
+                        this->group->command_responsed();
+                    };
+                this->group->client->reactivate(util::mkref(*this));
+            }
+        };
+
+        Buffer::iterator command_begin;
+        std::vector<Buffer::iterator> split_points;
+        slot key_slot[3];
+        int slot_index;
+        bool bad;
+    public:
+        RenameCommandParser(Buffer::iterator cmd_begin,
+                            Buffer::iterator arg_begin)
+            : command_begin(cmd_begin)
+            , slot_index(0)
+            , bad(false)
+        {
+            split_points.push_back(arg_begin);
+            key_slot[0] = 0;
+            key_slot[1] = 0;
+        }
+
+        void on_byte(byte b)
+        {
+            this->key_slot[slot_index] = crc16(this->key_slot[slot_index], b);
+        }
+
+        void on_element(Buffer::iterator i)
+        {
+            this->split_points.push_back(i);
+            key_slot[slot_index] = key_slot[slot_index] & (CLUSTER_SLOT_COUNT - 1);
+            if (++slot_index == 3) {
+                this->bad = true;
+                this->slot_index = 2;
+            }
+        }
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator)
+        {
+            if (slot_index != 2 || this->bad) {
+                return only_command(
+                    c,
+                    [&](util::sref<CommandGroup> g)
+                    {
+                        return util::mkptr(new DirectResponseCommand(
+                            "-ERR wrong number of arguments for 'rename' command\r\n", g));
+                    });
+            }
+            LOG(DEBUG) << "#Rename slots: " << key_slot[0] << " - " << key_slot[1];
+            if (key_slot[0] == key_slot[1]) {
+                return only_command(
+                    c,
+                    [&](util::sref<CommandGroup> g)
+                    {
+                        return util::mkptr(new OneSlotCommand(
+                                Buffer(command_begin, split_points[2]),
+                                g, key_slot[0]));
+                    });
+            }
+            return only_command(
+                c,
+                [&](util::sref<CommandGroup> g)
+                {
+                    return util::mkptr(new RenameCommand(
+                        Buffer(split_points[0], split_points[1]),
+                        Buffer(split_points[1], split_points[2]),
+                        key_slot[0], key_slot[1], g));
+                });
+        }
+    };
+
     std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
-        Buffer::iterator)>> const SPECIAL_RSP(
+        Buffer::iterator, Buffer::iterator)>> const SPECIAL_RSP(
     {
         {"PING",
-            [](Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new PingCommandParser(arg_start));
             }},
         {"DEL",
-            [](Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new DelCommandParser(arg_start));
             }},
         {"MGET",
-            [](Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new MGetCommandParser(arg_start));
             }},
         {"MSET",
-            [](Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new MSetCommandParser(arg_start));
+            }},
+        {"RENAME",
+            [](Buffer::iterator command_begin, Buffer::iterator arg_start)
+            {
+                return util::mkptr(new RenameCommandParser(
+                    command_begin, arg_start));
             }},
     });
 
     /*
     std::set<std::string> UNSUPPORTED_RSP({
-        "KEYS", "MIGRATE", "MOVE", "OBJECT", "RANDOMKEY", "RENAME",
+        "KEYS", "MIGRATE", "MOVE", "OBJECT", "RANDOMKEY",
         "RENAMENX", "SCAN", "BITOP",
         "BLPOP", "BRPOP", "BRPOPLPUSH", "RPOPLPUSH",
         "SINTERSTORE", "SDIFFSTORE", "SINTER", "SMOVE", "SUNIONSTORE",
@@ -550,7 +751,7 @@ namespace {
             }
             auto sfi = SPECIAL_RSP.find(last_command);
             if (sfi != SPECIAL_RSP.end()) {
-                special_parser = sfi->second(it);
+                special_parser = sfi->second(last_command_begin, it);
                 this->on_byte =
                     [&](byte b)
                     {
@@ -623,8 +824,8 @@ namespace {
                         client,
                         [&](util::sref<CommandGroup> g)
                         {
-                            return util::mkptr(new Command(
-                                Buffer(last_command_begin, i), g, true, last_key_slot));
+                            return util::mkptr(new OneSlotCommand(
+                                Buffer(last_command_begin, i), g, last_key_slot));
                         }));
                 }
             } else {
@@ -663,7 +864,7 @@ namespace {
 
 }
 
-void Command::copy_response(Buffer rsp)
+void Command::copy_response(Buffer rsp, bool)
 {
     this->buffer = std::move(rsp);
     this->group->command_responsed();
