@@ -8,6 +8,7 @@
 #include "proxy.hpp"
 #include "subscription.hpp"
 #include "utils/logging.hpp"
+#include "utils/random.hpp"
 
 using namespace cerb;
 
@@ -576,6 +577,46 @@ namespace {
         }
     };
 
+    class PublishCommandParser
+        : public SpecialCommandParser
+    {
+        Buffer::iterator begin;
+        int arg_count;
+    public:
+        void on_byte(byte) {}
+        void on_element(Buffer::iterator)
+        {
+            ++arg_count;
+        }
+
+        explicit PublishCommandParser(Buffer::iterator begin)
+            : begin(begin)
+            , arg_count(0)
+        {}
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator end)
+        {
+            if (arg_count != 2) {
+                return only_command(
+                    c,
+                    [&](util::sref<CommandGroup> g)
+                    {
+                        return util::mkptr(new DirectResponseCommand(
+                            "-ERR wrong number of arguments for 'publish' command\r\n", g));
+                    });
+            }
+            return only_command(
+                c,
+                [&](util::sref<CommandGroup> g)
+                {
+                    return util::mkptr(new OneSlotCommand(
+                        Buffer(begin, end), g,
+                        util::randint(0, CLUSTER_SLOT_COUNT)));
+                });
+        }
+    };
+
     std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
         Buffer::iterator, Buffer::iterator)>> const SPECIAL_RSP(
     {
@@ -610,6 +651,16 @@ namespace {
             {
                 return util::mkptr(new SubscribeCommandParser(command_begin));
             }},
+        {"PSUBSCRIBE",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new SubscribeCommandParser(command_begin));
+            }},
+        {"PUBLISH",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new PublishCommandParser(command_begin));
+            }},
     });
 
     /*
@@ -620,7 +671,7 @@ namespace {
         "SINTERSTORE", "SDIFFSTORE", "SINTER", "SMOVE", "SUNIONSTORE",
         "ZINTERSTORE", "ZUNIONSTORE",
         "PFADD", "PFCOUNT", "PFMERGE",
-        "PSUBSCRIBE", "PUBSUB", "PUBLISH", "PUNSUBSCRIBE", "UNSUBSCRIBE",
+        "PUBSUB", "PUNSUBSCRIBE", "UNSUBSCRIBE",
         "EVAL", "EVALSHA", "SCRIPT",
         "WATCH", "UNWATCH", "EXEC", "DISCARD", "MULTI",
         "SELECT", "QUIT", "ECHO", "AUTH",
