@@ -6,6 +6,7 @@
 #include "command.hpp"
 #include "exceptions.hpp"
 #include "proxy.hpp"
+#include "subscription.hpp"
 #include "utils/logging.hpp"
 
 using namespace cerb;
@@ -523,6 +524,58 @@ namespace {
         }
     };
 
+    class SubscribeCommandParser
+        : public SpecialCommandParser
+    {
+        class Subscribe
+            : public CommandGroup
+        {
+            Buffer buffer;
+        public:
+            explicit Subscribe(Buffer b)
+                : buffer(std::move(b))
+            {}
+
+            void deliver_client(Proxy* p, Client* client)
+            {
+                new Subscription(p, client->fd, p->random_addr(),
+                                 std::move(buffer));
+                LOG(DEBUG) << "Deliver " << client << "'s FD "
+                           << client->fd << " as subscription client";
+                client->fd = -1;
+            }
+        };
+
+        Buffer::iterator begin;
+        bool no_arg;
+    public:
+        void on_byte(byte) {}
+        void on_element(Buffer::iterator)
+        {
+            no_arg = false;
+        }
+
+        explicit SubscribeCommandParser(Buffer::iterator begin)
+            : begin(begin)
+            , no_arg(true)
+        {}
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator end)
+        {
+            if (no_arg) {
+                return only_command(
+                    c,
+                    [&](util::sref<CommandGroup> g)
+                    {
+                        return util::mkptr(new DirectResponseCommand(
+                            "-ERR wrong number of arguments for 'subscribe' command\r\n", g));
+                    });
+            }
+            return util::mkptr(new Subscribe(Buffer(this->begin, end)));
+        }
+    };
+
     std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
         Buffer::iterator, Buffer::iterator)>> const SPECIAL_RSP(
     {
@@ -552,6 +605,11 @@ namespace {
                 return util::mkptr(new RenameCommandParser(
                     command_begin, arg_start));
             }},
+        {"SUBSCRIBE",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new SubscribeCommandParser(command_begin));
+            }},
     });
 
     /*
@@ -562,7 +620,7 @@ namespace {
         "SINTERSTORE", "SDIFFSTORE", "SINTER", "SMOVE", "SUNIONSTORE",
         "ZINTERSTORE", "ZUNIONSTORE",
         "PFADD", "PFCOUNT", "PFMERGE",
-        "PSUBSCRIBE", "PUBSUB", "PUBLISH", "PUNSUBSCRIBE", "SUBSCRIBE", "UNSUBSCRIBE",
+        "PSUBSCRIBE", "PUBSUB", "PUBLISH", "PUNSUBSCRIBE", "UNSUBSCRIBE",
         "EVAL", "EVALSHA", "SCRIPT",
         "WATCH", "UNWATCH", "EXEC", "DISCARD", "MULTI",
         "SELECT", "QUIT", "ECHO", "AUTH",

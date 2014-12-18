@@ -95,6 +95,7 @@ int main(int argc, char* argv[])
     signal(SIGINT, exit_on_int);
     logging::init();
     trac::trace_on_seg_fault();
+    trac::trace_on_fpe();
 
     try {
         run(config);

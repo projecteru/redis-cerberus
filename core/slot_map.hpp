@@ -7,6 +7,7 @@
 
 #include "common.hpp"
 #include "utils/address.hpp"
+#include "utils/random.hpp"
 
 namespace cerb {
 
@@ -48,15 +49,15 @@ namespace cerb {
                           });
         }
 
-        template <typename F>
-        bool iterate_addr_util(F f) const
+        util::Address const& random_addr() const
         {
-            return _addr_to_val.end() != std::find_if(
-                _addr_to_val.begin(), _addr_to_val.end(),
-                [&](std::pair<util::Address, Type*> const& item)
-                {
-                    return f(item.first);
-                });
+            while (true) {
+                int s = util::randint(0, CLUSTER_SLOT_COUNT);
+                auto slot_it = _slot_range_to_addr.upper_bound(s);
+                if (slot_it != _slot_range_to_addr.end()) {
+                    return slot_it->second;
+                }
+            }
         }
 
         Type* get_by_slot(slot s)

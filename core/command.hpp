@@ -42,17 +42,25 @@ namespace cerb {
     };
 
     class CommandGroup {
+    protected:
+        CommandGroup()
+            : client(nullptr)
+            , awaiting_count(0)
+            , long_conn_command(true)
+        {}
     public:
         util::sref<Client> client;
         Buffer arr_payload;
         std::vector<util::sptr<Command>> commands;
         int awaiting_count;
+        bool const long_conn_command;
 
         CommandGroup(CommandGroup const&) = delete;
 
         explicit CommandGroup(util::sref<Client> c)
             : client(c)
             , awaiting_count(0)
+            , long_conn_command(false)
         {}
 
         virtual ~CommandGroup() {}
@@ -61,6 +69,7 @@ namespace cerb {
         void append_command(util::sptr<Command> c);
         virtual void append_buffer_to(std::vector<struct iovec>& iov);
         virtual int total_buffer_size() const;
+        virtual void deliver_client(Proxy*, Client*) {}
     };
 
     std::vector<util::sptr<CommandGroup>> split_client_command(

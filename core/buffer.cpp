@@ -4,6 +4,7 @@
 
 #include "buffer.hpp"
 #include "exceptions.hpp"
+#include "utils/logging.hpp"
 
 using namespace cerb;
 
@@ -31,21 +32,29 @@ int Buffer::read(int fd)
             break;
         }
     }
-    if (nread == -1 && errno != EAGAIN) {
-        throw IOError("buffer read", errno);
+    if (nread == -1) {
+        if (errno != EAGAIN) {
+            throw IOError("buffer read", errno);
+        }
+        if (n == 0) {
+            return -1;
+        }
     }
     return n;
 }
 
 int Buffer::write(int fd)
 {
-    int n = _buffer.size(), nwrite;
-    while (n > 0) {
-        nwrite = ::write(fd, _buffer.data() + _buffer.size() - n, n);
-        if (nwrite == -1 && errno != EAGAIN) {
+    size_type n = 0;
+    while (n < _buffer.size()) {
+        int nwrite = ::write(fd, _buffer.data() + n, _buffer.size() - n);
+        if (nwrite == -1) {
+            if (errno == EAGAIN) {
+                continue;
+            }
             throw IOError("buffer write", errno);
         }
-        n -= nwrite;
+        n += nwrite;
     }
     return n;
 }
