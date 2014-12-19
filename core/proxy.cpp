@@ -223,9 +223,8 @@ SlotsMapUpdater::SlotsMapUpdater(util::Address const& addr, Proxy* p)
     }
 }
 
-void SlotsMapUpdater::_send_cmd()
+void SlotsMapUpdater::_await_data()
 {
-    write_slot_map_cmd_to(this->fd);
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
@@ -234,9 +233,25 @@ void SlotsMapUpdater::_send_cmd()
     }
 }
 
+void SlotsMapUpdater::_send_cmd()
+{
+    write_slot_map_cmd_to(this->fd);
+    this->_await_data();
+}
+
 void SlotsMapUpdater::_recv_rsp()
 {
-    _updated_map = std::move(read_slot_map_from(this->fd));
+    _rsp.read(this->fd);
+    std::vector<util::sptr<Response>> rsp(split_server_response(_rsp));
+    if (rsp.size() == 0) {
+        return this->_await_data();
+    }
+    if (rsp.size() != 1) {
+        throw BadRedisMessage("Ask cluster nodes returns responses with size=" +
+                              util::str(int(rsp.size())));
+    }
+    this->_updated_map = std::move(
+        parse_slot_map(rsp[0]->dump_buffer().to_string()));
     _proxy->notify_slot_map_updated();
 }
 
@@ -443,7 +458,7 @@ Proxy::Proxy(util::Address const& remote)
     : _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
-                  }, sync_init_slot_map(remote))
+                  })
     , _active_slot_updaters_count(0)
     , _server_closed(false)
     , epfd(epoll_create(MAX_EVENTS))
@@ -451,6 +466,8 @@ Proxy::Proxy(util::Address const& remote)
     if (epfd == -1) {
         throw std::runtime_error("epoll_create");
     }
+    _slot_updaters.push_back(util::mkptr(new SlotsMapUpdater(remote, this)));
+    ++_active_slot_updaters_count;
 }
 
 Proxy::~Proxy()

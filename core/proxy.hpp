@@ -114,9 +114,11 @@ namespace cerb {
     {
         Proxy* _proxy;
         std::map<slot, util::Address> _updated_map;
+        Buffer _rsp;
 
         void _send_cmd();
         void _recv_rsp();
+        void _await_data();
     public:
         SlotsMapUpdater(util::Address const& addr, Proxy* p);
 

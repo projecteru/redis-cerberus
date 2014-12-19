@@ -19,16 +19,8 @@ namespace cerb {
         std::map<util::Address, Type*> _addr_to_val;
         std::function<Type*(std::string const&, int)> _val_factory;
     public:
-        SlotMap(std::function<Type*(std::string const&, int)> vf,
-                std::map<slot, util::Address> map)
-            : _slot_range_to_addr(std::move(map))
-            , _val_factory(std::move(vf))
-        {}
-
-        SlotMap(SlotMap&& rhs)
-            : _slot_range_to_addr(std::move(rhs._slot_range_to_addr))
-            , _addr_to_val(std::move(rhs._addr_to_val))
-            , _val_factory(std::move(rhs._val_factory))
+        explicit SlotMap(std::function<Type*(std::string const&, int)> vf)
+            : _val_factory(std::move(vf))
         {}
 
         SlotMap(SlotMap const&) = delete;
@@ -110,9 +102,8 @@ namespace cerb {
         }
     };
 
-    std::map<slot, util::Address> read_slot_map_from(int fd);
+    std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info);
     void write_slot_map_cmd_to(int fd);
-    std::map<slot, util::Address> sync_init_slot_map(util::Address const& a);
 
 }
 
