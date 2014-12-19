@@ -210,9 +210,8 @@ SlotsMapUpdater::SlotsMapUpdater(util::Address const& addr, Proxy* p)
     }
 }
 
-void SlotsMapUpdater::_send_cmd()
+void SlotsMapUpdater::_await_data()
 {
-    write_slot_map_cmd_to(this->fd);
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
@@ -221,9 +220,25 @@ void SlotsMapUpdater::_send_cmd()
     }
 }
 
+void SlotsMapUpdater::_send_cmd()
+{
+    write_slot_map_cmd_to(this->fd);
+    this->_await_data();
+}
+
 void SlotsMapUpdater::_recv_rsp()
 {
-    _updated_map = std::move(read_slot_map_from(this->fd));
+    _rsp.read(this->fd);
+    std::vector<util::sptr<Response>> rsp(split_server_response(_rsp));
+    if (rsp.size() == 0) {
+        return this->_await_data();
+    }
+    if (rsp.size() != 1) {
+        throw BadRedisMessage("Ask cluster nodes returns responses with size=" +
+                              util::str(int(rsp.size())));
+    }
+    this->_updated_map = std::move(
+        parse_slot_map(rsp[0]->dump_buffer().to_string()));
     _proxy->notify_slot_map_updated();
 }
 

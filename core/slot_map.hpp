@@ -101,7 +101,7 @@ namespace cerb {
         }
     };
 
-    std::map<slot, util::Address> read_slot_map_from(int fd);
+    std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info);
     void write_slot_map_cmd_to(int fd);
 
 }
