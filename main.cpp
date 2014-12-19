@@ -65,7 +65,12 @@ namespace {
     {
         std::vector<cerb::ListenThread> threads;
         int bind_port = util::atoi(config.get("bind"));
-        for (int i = 0; i < 4; ++i) {
+        int thread_count = util::atoi(config.get("thread", "1"));
+        if (thread_count <= 0) {
+            LOG(ERROR) << "Invalid thread count";
+            exit(1);
+        }
+        for (int i = 0; i < thread_count; ++i) {
             threads.push_back(cerb::ListenThread(bind_port, config.get("node")));
         }
         std::for_each(threads.begin(), threads.end(),
@@ -73,7 +78,8 @@ namespace {
                       {
                           t.run();
                       });
-        LOG(INFO) << "Started; listen to port " << bind_port;
+        LOG(INFO) << "Started; listen to port " << bind_port
+                  << " thread=" << thread_count;
         std::for_each(threads.begin(), threads.end(),
                       [](cerb::ListenThread& t)
                       {
