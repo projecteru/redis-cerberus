@@ -57,17 +57,18 @@ void trac::trace_on_seg_fault()
     install(SIGSEGV, signal_action(handle_segv));
 }
 
-static void handle_div_0(int, siginfo_t* info, void*)
+static void handle_fpe(int, siginfo_t* info, void*)
 {
-    if (FPE_INTDIV == info->si_code)
-    {
+    if (FPE_INTDIV == info->si_code) {
         (**ostream()) << "Divided by 0:" << std::endl;
-        print_trace(**ostream());
-        std::terminate();
+    } else {
+        (**ostream()) << "SIGFPE:" << std::endl;
     }
+    print_trace(**ostream());
+    std::terminate();
 }
 
-void trac::trace_on_div_0()
+void trac::trace_on_fpe()
 {
-    install(SIGFPE, signal_action(handle_div_0));
+    install(SIGFPE, signal_action(handle_fpe));
 }

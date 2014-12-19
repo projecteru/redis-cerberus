@@ -24,7 +24,23 @@ namespace cerb {
         virtual ~Connection() {}
 
         virtual void triggered(int events) = 0;
-        virtual void close();
+        virtual void event_handled(std::set<Connection*>&) {}
+        virtual void close() = 0;
+    };
+
+    class ProxyConnection
+        : public Connection
+    {
+    protected:
+        bool _closed;
+    public:
+        explicit ProxyConnection(int fd)
+            : Connection(fd)
+            , _closed(false)
+        {}
+
+        void event_handled(std::set<Connection*>&);
+        void close();
     };
 
     class Acceptor
@@ -42,7 +58,7 @@ namespace cerb {
     };
 
     class Server
-        : public Connection
+        : public ProxyConnection
     {
         Proxy* const _proxy;
         Buffer _buffer;
@@ -54,9 +70,9 @@ namespace cerb {
         void _recv_from();
     public:
         Server(std::string const& host, int port, Proxy* p);
-        ~Server();
 
         void triggered(int events);
+        void event_handled(std::set<Connection*>&);
 
         void push_client_command(util::sref<Command> cmd);
         void pop_client(Client* cli);
@@ -64,7 +80,7 @@ namespace cerb {
     };
 
     class Client
-        : public Connection
+        : public ProxyConnection
     {
         void _send_to();
         void _recv_from();
@@ -80,7 +96,7 @@ namespace cerb {
         void _response_ready();
     public:
         Client(int fd, Proxy* p)
-            : Connection(fd)
+            : ProxyConnection(fd)
             , _proxy(p)
             , _awaiting_count(0)
         {}
@@ -90,6 +106,7 @@ namespace cerb {
         void triggered(int events);
         void group_responsed();
         void add_peer(Server* svr);
+        void reactivate(util::sref<Command> cmd);
     };
 
     class SlotsMapUpdater
@@ -120,8 +137,10 @@ namespace cerb {
     class Proxy {
         SlotMap<Server> _server_map;
         std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
+        std::vector<util::sptr<SlotsMapUpdater>> _finished_slot_updaters;
         int _active_slot_updaters_count;
         std::vector<util::sref<Command>> _retrying_commands;
+        bool _server_closed;
 
         bool _should_update_slot_map() const;
         void _retrieve_slot_map();
@@ -136,16 +155,17 @@ namespace cerb {
 
         Proxy(Proxy const&) = delete;
 
-        Server* get_server_by_slot(slot key_slot)
+        util::Address const& random_addr() const
         {
-            return _server_map.get_by_slot(key_slot);
+            return _server_map.random_addr();
         }
 
+        Server* get_server_by_slot(slot key_slot);
         void notify_slot_map_updated();
+        void server_closed();
         void retry_move_ask_command_later(util::sref<Command> cmd);
         void run(int listen_port);
         void accept_from(int listen_fd);
-        void shut_server(Server* svr);
         void pop_client(Client* cli);
     };
 

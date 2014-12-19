@@ -6,7 +6,7 @@ namespace trac {
     void set_output(std::ostream& os);
 
     void trace_on_seg_fault();
-    void trace_on_div_0();
+    void trace_on_fpe();
 
 }
 

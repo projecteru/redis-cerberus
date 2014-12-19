@@ -11,8 +11,10 @@ using namespace cerb;
 
 FDWrapper::~FDWrapper()
 {
-    LOG(DEBUG) << "*close " << fd;
-    close(fd);
+    if (fd != -1) {
+        LOG(DEBUG) << "*close " << fd;
+        close(fd);
+    }
 }
 
 void cerb::set_nonblocking(int sockfd) {
@@ -46,6 +48,7 @@ int cerb::new_stream_socket()
 
 void cerb::connect_fd(std::string const& host, int port, int fd)
 {
+    LOG(DEBUG) << "Connecting to " << host << ':' << port << " for " << fd;
     set_tcpnodelay(fd);
 
     struct sockaddr_in serv_addr;

@@ -15,14 +15,16 @@ namespace {
     {
     public:
         Buffer rsp;
+        bool error;
 
-        explicit NormalResponse(Buffer r)
+        NormalResponse(Buffer r, bool e)
             : rsp(std::move(r))
+            , error(e)
         {}
 
         void rsp_to(util::sref<Command> cmd, util::sref<Proxy>)
         {
-            cmd->copy_response(std::move(this->rsp));
+            cmd->copy_response(std::move(this->rsp), error);
         }
 
         Buffer const& dump_buffer() const
@@ -63,10 +65,11 @@ namespace {
             responses.push_back(util::mkptr(new RetryMovedAskResponse));
         }
 
-        void _push_normal_rsp(Buffer::iterator begin, Buffer::iterator end)
+        void _push_normal_rsp(Buffer::iterator begin, Buffer::iterator end,
+                              bool error)
         {
             responses.push_back(util::mkptr(
-                new NormalResponse(Buffer(begin, end))));
+                new NormalResponse(Buffer(begin, end), error)));
         }
 
         void _push_rsp(Buffer::iterator i)
@@ -80,7 +83,7 @@ namespace {
                     return _push_retry_rsp();
                 }
             }
-            _push_normal_rsp(_split_points.back(), i);
+            _push_normal_rsp(_split_points.back(), i, !_last_error.empty());
         }
 
         void _on_element(Buffer::iterator i)
@@ -117,7 +120,7 @@ namespace {
 
         void on_arr_end(Buffer::iterator next)
         {
-            _push_normal_rsp(_split_points.back(), next);
+            _push_normal_rsp(_split_points.back(), next, false);
             BaseType::on_element(next);
             if (this->_nested_array_element_count.size() == 0) {
                 this->on_element = [&](Buffer::iterator i)
