@@ -408,13 +408,15 @@ Proxy::Proxy(util::Address const& remote)
     : _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
-                  }, sync_init_slot_map(remote))
+                  })
     , _active_slot_updaters_count(0)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
         throw std::runtime_error("epoll_create");
     }
+    _slot_updaters.push_back(util::mkptr(new SlotsMapUpdater(remote, this)));
+    ++_active_slot_updaters_count;
 }
 
 Proxy::~Proxy()
