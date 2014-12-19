@@ -496,7 +496,7 @@ namespace {
             if (slot_index != 2 || this->bad) {
                 return only_command(
                     c,
-                    [&](util::sref<CommandGroup> g)
+                    [](util::sref<CommandGroup> g)
                     {
                         return util::mkptr(new DirectResponseCommand(
                             "-ERR wrong number of arguments for 'rename' command\r\n", g));
@@ -506,7 +506,7 @@ namespace {
             if (key_slot[0] == key_slot[1]) {
                 return only_command(
                     c,
-                    [&](util::sref<CommandGroup> g)
+                    [this](util::sref<CommandGroup> g)
                     {
                         return util::mkptr(new OneSlotCommand(
                                 Buffer(command_begin, split_points[2]),
@@ -515,7 +515,7 @@ namespace {
             }
             return only_command(
                 c,
-                [&](util::sref<CommandGroup> g)
+                [this](util::sref<CommandGroup> g)
                 {
                     return util::mkptr(new RenameCommand(
                         Buffer(split_points[0], split_points[1]),
@@ -600,7 +600,7 @@ namespace {
             if (arg_count != 2) {
                 return only_command(
                     c,
-                    [&](util::sref<CommandGroup> g)
+                    [](util::sref<CommandGroup> g)
                     {
                         return util::mkptr(new DirectResponseCommand(
                             "-ERR wrong number of arguments for 'publish' command\r\n", g));
@@ -840,20 +840,19 @@ namespace {
             this->last_command_arg_count = i->second;
             this->last_command_is_bad = true;
             this->on_byte =
-                [&](byte b)
+                [this](byte b)
                 {
                     this->on_key_byte(b);
                 };
             this->on_element =
-                [&](Buffer::iterator i)
+                [this](Buffer::iterator i)
                 {
-                    this->on_command_key();
-                    BaseType::on_element(i);
+                    this->on_command_key(i);
                 };
             return true;
         }
 
-        void on_command_arr_first_element(Buffer::iterator it)
+        void select_command_parser(Buffer::iterator it)
         {
             if (handle_standard_key_command()) {
                 return;
@@ -862,37 +861,44 @@ namespace {
             if (sfi != SPECIAL_RSP.end()) {
                 special_parser = sfi->second(last_command_begin, it);
                 this->on_byte =
-                    [&](byte b)
+                    [this](byte b)
                     {
                         this->special_parser->on_byte(b);
                     };
                 this->on_element =
-                    [&](Buffer::iterator i)
+                    [this](Buffer::iterator i)
                     {
                         this->special_parser->on_element(i);
                         BaseType::on_element(i);
                     };
-            } else {
-                last_command_is_bad = true;
-                this->on_byte = [](byte) {};
-                this->on_element =
-                    [&](Buffer::iterator i)
-                    {
-                        BaseType::on_element(i);
-                    };
+                return;
             }
+            last_command_is_bad = true;
+            this->on_byte = [](byte) {};
+            this->on_element =
+                [this](Buffer::iterator i)
+                {
+                    BaseType::on_element(i);
+                };
         }
 
-        void on_command_key()
+        void on_command_arr_first_element(Buffer::iterator it)
+        {
+            select_command_parser(it);
+            BaseType::on_element(it);
+        }
+
+        void on_command_key(Buffer::iterator i)
         {
             this->last_command_is_bad = false;
             this->on_byte = [](byte) {};
             this->on_element =
-                [&](Buffer::iterator i)
+                [this](Buffer::iterator i)
                 {
                     --this->last_command_arg_count;
                     BaseType::on_element(i);
                 };
+            BaseType::on_element(i);
         }
 
         void on_command_byte(byte b)
@@ -914,7 +920,7 @@ namespace {
             if (last_command_is_bad) {
                 splitted_groups.push_back(only_command(
                     client,
-                    [&](util::sref<CommandGroup> g)
+                    [](util::sref<CommandGroup> g)
                     {
                         return util::mkptr(new DirectResponseCommand(
                             "-ERR Unknown command or command key not specified\r\n", g));
@@ -923,7 +929,7 @@ namespace {
                 if (this->last_command_arg_count > 0) {
                     splitted_groups.push_back(only_command(
                         client,
-                        [&](util::sref<CommandGroup> g)
+                        [](util::sref<CommandGroup> g)
                         {
                             return util::mkptr(new DirectResponseCommand(
                                 "-ERR wrong number of arguments\r\n", g));
@@ -958,15 +964,14 @@ namespace {
                 return;
             }
             this->on_byte =
-                [&](byte b)
+                [this](byte b)
                 {
                     this->on_command_byte(b);
                 };
             this->on_element =
-                [&](Buffer::iterator it)
+                [this](Buffer::iterator it)
                 {
                     this->on_command_arr_first_element(it);
-                    BaseType::on_element(it);
                 };
         }
     };

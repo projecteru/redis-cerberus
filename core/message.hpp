@@ -178,7 +178,7 @@ namespace cerb { namespace msg {
             , _nested_array_element_count(
                 std::move(rhs._nested_array_element_count))
         {}
-    public:
+
         void interrupt()
         {
             _interrupted = true;
