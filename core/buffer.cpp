@@ -65,6 +65,7 @@ void Buffer::buffer_ready(std::vector<struct iovec>& iov)
 {
     if (!_buffer.empty()) {
         struct iovec v = {_buffer.data(), size_t(_buffer.size())};
+        LOG(DEBUG) << "Push iov " << reinterpret_cast<void*>(_buffer.data()) << ' ' << _buffer.size();
         iov.push_back(v);
     }
 }

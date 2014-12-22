@@ -1031,5 +1031,10 @@ std::vector<util::sptr<CommandGroup>> cerb::split_client_command(
     ClientCommandSplitter c(cerb::msg::split_by(
         buffer.begin(), buffer.end(), ClientCommandSplitter(
             buffer.begin(), cli)));
+    if (c.finished()) {
+        buffer.clear();
+    } else {
+        buffer.truncate_from_begin(c.interrupt_point());
+    }
     return std::move(c.splitted_groups);
 }

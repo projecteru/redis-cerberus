@@ -100,7 +100,6 @@ void Server::_send_to()
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
                   [&](util::sref<Command>& cmd)
                   {
-                      LOG(DEBUG) << "  # " << cmd->buffer.to_string();
                       cmd->buffer.buffer_ready(iov);
                       n += cmd->buffer.size();
                   });
@@ -309,7 +308,7 @@ void Client::triggered(int events)
 
 void Client::_send_to()
 {
-    if (this->_awaiting_groups.empty()) {
+    if (this->_awaiting_groups.empty() || _awaiting_count != 0) {
         return;
     }
     if (!this->_ready_groups.empty()) {
@@ -412,7 +411,6 @@ void Client::_process()
         }
         _awaiting_groups.push_back(std::move(g));
     }
-    this->_buffer.clear();
     if (0 < _awaiting_count) {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -430,6 +428,7 @@ void Client::_process()
     } else {
         _response_ready();
     }
+    LOG(DEBUG) << "Processed, rest buffer " << this->_buffer.size();
 }
 
 void Client::_response_ready()
