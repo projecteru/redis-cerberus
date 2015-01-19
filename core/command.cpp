@@ -1,5 +1,4 @@
 #include <sstream>
-#include <map>
 #include <algorithm>
 
 #include "message.hpp"
@@ -681,97 +680,27 @@ namespace {
     });
     */
 
-    /* Name : minimal number of arguments */
-    std::map<std::string, int> STD_COMMANDS({
-        {"DUMP", 0},
-        {"EXISTS", 0},
-        {"EXPIRE", 1},
-        {"EXPIREAT", 1},
-        {"TTL", 0},
-        {"PEXPIRE", 1},
-        {"PEXPIREAT", 1},
-        {"PTTL", 0},
-        {"PERSIST", 0},
-        {"RESTORE", 2},
-        {"TYPE", 0},
+    std::set<std::string> STD_COMMANDS({
+        "DUMP", "EXISTS", "EXPIRE", "EXPIREAT", "TTL", "PEXPIRE", "PEXPIREAT",
+        "PTTL", "PERSIST", "RESTORE", "TYPE",
 
-        {"GET", 0},
-        {"SET", 1},
-        {"SETNX", 1},
-        {"GETSET", 1},
-        {"SETEX", 2},
-        {"PSETEX", 2},
-        {"SETBIT", 2},
-        {"APPEND", 1},
-        {"BITCOUNT", 0},
-        {"GETBIT", 1},
-        {"GETRANGE", 1},
-        {"SETRANGE", 2},
-        {"STRLEN", 0},
-        {"INCR", 0},
-        {"DECR", 0},
-        {"INCRBY", 1},
-        {"DECRBY", 1},
-        {"INCRBYFLOAT", 1},
+        "GET", "SET", "SETNX", "GETSET", "SETEX", "PSETEX", "SETBIT", "APPEND",
+        "BITCOUNT", "GETBIT", "GETRANGE", "SETRANGE", "STRLEN", "INCR", "DECR",
+        "INCRBY", "DECRBY", "INCRBYFLOAT",
 
-        {"HEXISTS", 1},
-        {"HGET", 1},
-        {"HGETALL", 0},
-        {"HSET", 2},
-        {"HSETNX", 2},
-        {"HDEL", 1},
-        {"HKEYS", 0},
-        {"HVALS", 0},
-        {"HLEN", 0},
-        {"HINCRBY", 2},
-        {"HINCRBYFLOAT", 2},
-        {"HKEYS", 0},
-        {"HMGET", 1},
-        {"HMSET", 2},
-        {"HSCAN", 1},
+        "HGET", "HGETALL", "HSET", "HSETNX", "HDEL", "HKEYS", "HVALS", "HLEN",
+        "HEXISTS", "HINCRBY", "HINCRBYFLOAT", "HKEYS", "HMGET", "HMSET", "HSCAN",
 
-        {"LINDEX", 1},
-        {"LINSERT", 3},
-        {"LLEN", 0},
-        {"LPOP", 0},
-        {"RPOP", 0},
-        {"LPUSH", 1},
-        {"LPUSHX", 1},
-        {"RPUSH", 1},
-        {"RPUSHX", 1},
-        {"LRANGE", 2},
-        {"LREM", 2},
-        {"LSET", 2},
-        {"LTRIM", 2},
+        "LINDEX", "LINSERT", "LLEN", "LPOP", "RPOP", "LPUSH", "LPUSHX",
+        "RPUSH", "RPUSHX", "LRANGE", "LREM", "LSET", "LTRIM",
 
-        {"SCARD", 0},
-        {"SADD", 1},
-        {"SISMEMBER", 1},
-        {"SMEMBERS", 0},
-        {"SPOP", 0},
-        {"SRANDMEMBER", 0},
-        {"SREM", 1},
-        {"SSCAN", 1},
+        "SCARD", "SADD", "SISMEMBER", "SMEMBERS", "SPOP", "SRANDMEMBER",
+        "SREM", "SSCAN",
 
-        {"ZCARD", 0},
-        {"ZADD", 1},
-        {"ZREM", 1},
-        {"ZSCAN", 1},
-        {"ZCOUNT", 2},
-        {"ZINCRBY", 2},
-        {"ZLEXCOUNT", 2},
-        {"ZRANGE", 2},
-        {"ZRANGEBYLEX", 2},
-        {"ZREVRANGEBYLEX", 2},
-        {"ZRANGEBYSCORE", 2},
-        {"ZRANK", 1},
-        {"ZREMRANGEBYLEX", 2},
-        {"ZREMRANGEBYRANK", 2},
-        {"ZREMRANGEBYSCORE", 2},
-        {"ZREVRANGE", 2},
-        {"ZREVRANGEBYSCORE", 2},
-        {"ZREVRANK", 1},
-        {"ZSCORE", 1},
+        "ZCARD", "ZADD", "ZREM", "ZSCAN", "ZCOUNT", "ZINCRBY", "ZLEXCOUNT",
+        "ZRANGE", "ZRANGEBYLEX", "ZREVRANGEBYLEX", "ZRANGEBYSCORE", "ZRANK",
+        "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREVRANGE",
+        "ZREVRANGEBYSCORE", "ZREVRANK", "ZSCORE",
     });
 
     class ClientCommandSplitter
@@ -786,7 +715,6 @@ namespace {
         std::string last_command;
         slot last_key_slot;
         bool last_command_is_bad;
-        int last_command_arg_count;
 
         std::vector<util::sptr<CommandGroup>> splitted_groups;
         std::function<void(byte)> on_byte;
@@ -801,7 +729,6 @@ namespace {
             , last_command_begin(i)
             , last_key_slot(0)
             , last_command_is_bad(false)
-            , last_command_arg_count(0)
             , on_byte(std::bind(&ClientCommandSplitter::on_command_byte,
                                 this, std::placeholders::_1))
             , on_element(std::bind(&ClientCommandSplitter::on_raw_element,
@@ -816,7 +743,6 @@ namespace {
             , last_command(std::move(rhs.last_command))
             , last_key_slot(rhs.last_key_slot)
             , last_command_is_bad(rhs.last_command_is_bad)
-            , last_command_arg_count(rhs.last_command_arg_count)
             , splitted_groups(std::move(rhs.splitted_groups))
             , on_byte(std::move(rhs.on_byte))
             , on_element(std::move(rhs.on_element))
@@ -837,7 +763,6 @@ namespace {
             if (i == STD_COMMANDS.end()) {
                 return false;
             }
-            this->last_command_arg_count = i->second;
             this->last_command_is_bad = true;
             this->on_byte =
                 [this](byte b)
@@ -895,7 +820,6 @@ namespace {
             this->on_element =
                 [this](Buffer::iterator i)
                 {
-                    --this->last_command_arg_count;
                     BaseType::on_element(i);
                 };
             BaseType::on_element(i);
@@ -926,23 +850,13 @@ namespace {
                             "-ERR Unknown command or command key not specified\r\n", g));
                     }));
             } else if (special_parser.nul()) {
-                if (this->last_command_arg_count > 0) {
-                    splitted_groups.push_back(only_command(
-                        client,
-                        [](util::sref<CommandGroup> g)
-                        {
-                            return util::mkptr(new DirectResponseCommand(
-                                "-ERR wrong number of arguments\r\n", g));
-                        }));
-                } else {
-                    splitted_groups.push_back(only_command(
-                        client,
-                        [&](util::sref<CommandGroup> g)
-                        {
-                            return util::mkptr(new OneSlotCommand(
-                                Buffer(last_command_begin, i), g, last_key_slot));
-                        }));
-                }
+                splitted_groups.push_back(only_command(
+                    client,
+                    [&](util::sref<CommandGroup> g)
+                    {
+                        return util::mkptr(new OneSlotCommand(
+                            Buffer(last_command_begin, i), g, last_key_slot));
+                    }));
             } else {
                 splitted_groups.push_back(special_parser->spawn_commands(client, i));
                 special_parser.reset();
