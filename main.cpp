@@ -1,12 +1,11 @@
 #include <csignal>
-#include <vector>
 #include <map>
 #include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
 
-#include "core/concurrence.hpp"
+#include "core/globals.hpp"
 #include "utils/logging.hpp"
 #include "utils/string.h"
 #include "backtracpp/sig-handler.h"
@@ -63,7 +62,6 @@ namespace {
 
     void run(Configuration const& config)
     {
-        std::vector<cerb::ListenThread> threads;
         int bind_port = util::atoi(config.get("bind"));
         int thread_count = util::atoi(config.get("thread", "1"));
         if (thread_count <= 0) {
@@ -71,16 +69,19 @@ namespace {
             exit(1);
         }
         for (int i = 0; i < thread_count; ++i) {
-            threads.push_back(cerb::ListenThread(bind_port, config.get("node")));
+            cerb_global::all_threads.push_back(
+                cerb::ListenThread(bind_port, config.get("node")));
         }
-        std::for_each(threads.begin(), threads.end(),
+        std::for_each(cerb_global::all_threads.begin(),
+                      cerb_global::all_threads.end(),
                       [](cerb::ListenThread& t)
                       {
                           t.run();
                       });
         LOG(INFO) << "Started; listen to port " << bind_port
                   << " thread=" << thread_count;
-        std::for_each(threads.begin(), threads.end(),
+        std::for_each(cerb_global::all_threads.begin(),
+                      cerb_global::all_threads.end(),
                       [](cerb::ListenThread& t)
                       {
                           t.join();

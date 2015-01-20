@@ -101,6 +101,11 @@ namespace cerb {
                 }
             }
         }
+
+        int addrs_count() const
+        {
+            return _addr_to_val.size();
+        }
     };
 
     std::map<slot, util::Address> parse_slot_map(std::string const& nodes_info);

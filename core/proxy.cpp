@@ -454,7 +454,8 @@ void Client::add_peer(Server* svr)
 }
 
 Proxy::Proxy(util::Address const& remote)
-    : _server_map([&](std::string const& host, int port)
+    : _clients_count(0)
+    , _server_map([&](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
                   })
@@ -674,6 +675,7 @@ void Proxy::accept_from(int listen_fd)
         set_nonblocking(cfd);
         set_tcpnodelay(cfd);
         Connection* c = new Client(cfd, this);
+        ++this->_clients_count;
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
         ev.data.ptr = c;
@@ -698,4 +700,5 @@ void Proxy::pop_client(Client* cli)
                    {
                        return cmd->group->client.is(cli);
                    });
+    --this->_clients_count;
 }

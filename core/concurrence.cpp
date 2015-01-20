@@ -1,6 +1,7 @@
 #include <stdexcept>
 
 #include "concurrence.hpp"
+#include "globals.hpp"
 #include "utils/logging.hpp"
 
 using namespace cerb;
@@ -16,6 +17,7 @@ void ListenThread::run()
     this->_thread.reset(new std::thread(
         [=]()
         {
+            cerb_global::current_proxy = *_proxy;
             try {
                 this->_proxy->run(this->_listen_port);
             } catch (std::runtime_error& e) {

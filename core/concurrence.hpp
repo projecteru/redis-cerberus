@@ -8,9 +8,7 @@
 
 namespace cerb {
 
-    class ListenThread
-        : protected std::thread
-    {
+    class ListenThread {
         int const _listen_port;
         util::sptr<Proxy> _proxy;
         util::sptr<std::thread> _thread;
@@ -26,6 +24,11 @@ namespace cerb {
 
         void run();
         void join();
+
+        util::sref<Proxy const> get_proxy() const
+        {
+            return *_proxy;
+        }
     };
 
 }

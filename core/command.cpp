@@ -6,6 +6,7 @@
 #include "exceptions.hpp"
 #include "proxy.hpp"
 #include "subscription.hpp"
+#include "stats.hpp"
 #include "utils/logging.hpp"
 #include "utils/random.hpp"
 
@@ -128,8 +129,15 @@ namespace {
         }
     };
 
-    std::map<std::string, std::string> const QUICK_RSP({
-        {"PING", "+PONG\r\n"},
+    std::string stats_string()
+    {
+        std::string s(stats_all());
+        return '+' + s + "\r\n";
+    }
+
+    std::map<std::string, std::function<std::string()>> const QUICK_RSP({
+        {"PING", [](){return "+PONG\r\n";}},
+        {"PROXY", [](){return stats_string();}},
     });
 
     util::sptr<CommandGroup> quick_rsp(std::string const& command, util::sref<Client> c)
@@ -141,7 +149,7 @@ namespace {
                 "-ERR unknown command '" + command + "'\r\n", *g)));
         } else {
             g->append_command(util::mkptr(new DirectResponseCommand(
-                fi->second, *g)));
+                fi->second(), *g)));
         }
         return std::move(g);
     }
@@ -229,6 +237,27 @@ namespace {
             }
             end = i;
         }
+    };
+
+    class ProxyStatsCommandParser
+        : public SpecialCommandParser
+    {
+    public:
+        ProxyStatsCommandParser() {}
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator)
+        {
+            return only_command(
+                c,
+                [&](util::sref<CommandGroup> g)
+                {
+                    return util::mkptr(new DirectResponseCommand(stats_string(), g));
+                });
+        }
+
+        void on_byte(byte) {}
+        void on_element(Buffer::iterator) {}
     };
 
     class EachKeyCommandParser
@@ -623,6 +652,11 @@ namespace {
             [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new PingCommandParser(arg_start));
+            }},
+        {"PROXY",
+            [](Buffer::iterator, Buffer::iterator)
+            {
+                return util::mkptr(new ProxyStatsCommandParser);
             }},
         {"DEL",
             [](Buffer::iterator, Buffer::iterator arg_start)

@@ -137,6 +137,8 @@ namespace cerb {
     };
 
     class Proxy {
+        int _clients_count;
+
         SlotMap<Server> _server_map;
         std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
         std::vector<util::sptr<SlotsMapUpdater>> _finished_slot_updaters;
@@ -156,6 +158,16 @@ namespace cerb {
         ~Proxy();
 
         Proxy(Proxy const&) = delete;
+
+        int clients_count() const
+        {
+            return _clients_count;
+        }
+
+        int masters_count() const
+        {
+            return _server_map.addrs_count();
+        }
 
         util::Address const& random_addr() const
         {
