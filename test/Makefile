@@ -3,10 +3,17 @@ TESTDIR=./test
 
 include misc/mf-template.mk
 
-test:$(TESTDIR)/test.out
-	$(TESTDIR)/test.out
+ifeq ($(CHECK_MEM), 1)
+	VALGRIND=valgrind
+else
+	VALGRIND=
+endif
 
-$(TESTDIR)/test.out:message.dt response.dt
+test:$(TESTDIR)/test.out
+	$(VALGRIND) $(TESTDIR)/test.out
+
+$(TESTDIR)/test.out:message.dt response.dt object_pool.dt memory_page.dt \
+                    buffer.dt
 	$(LINK) $(TESTDIR)/*.o utils/*.o core/*.o \
 	        $(TEST_LIBS) \
 	     -o $(TESTDIR)/test.out

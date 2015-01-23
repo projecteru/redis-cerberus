@@ -1,5 +1,5 @@
-#ifndef __TYPE_TRAITS_HPP__
-#define __TYPE_TRAITS_HPP__
+#ifndef __CERBERUS_UTILITY_TYPE_TRAITS_HPP__
+#define __CERBERUS_UTILITY_TYPE_TRAITS_HPP__
 
 namespace tp {
 
@@ -112,4 +112,4 @@ namespace tp {
 
 }
 
-#endif /* __TYPE_TRAITS_HPP__ */
+#endif /* __CERBERUS_UTILITY_TYPE_TRAITS_HPP__ */

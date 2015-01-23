@@ -5,18 +5,19 @@
 #include <string>
 
 #include "common.hpp"
+#include "utils/mempage.hpp"
 
 struct iovec;
 
 namespace cerb {
 
     class Buffer {
-        std::vector<byte> _buffer;
+        util::MemoryPages _buffer;
     public:
-        typedef std::vector<byte>::size_type size_type;
-        typedef std::vector<byte>::value_type value_type;
-        typedef std::vector<byte>::iterator iterator;
-        typedef std::vector<byte>::const_iterator const_iterator;
+        typedef util::SharedMemPage::msize_t size_type;
+        typedef util::MemPage::byte value_type;
+        typedef util::MemoryPages::const_iterator const_iterator;
+        typedef const_iterator iterator;
 
         Buffer() {}
 
@@ -28,7 +29,7 @@ namespace cerb {
             : _buffer(std::move(rhs._buffer))
         {}
 
-        Buffer(iterator first, iterator last)
+        Buffer(const_iterator first, const_iterator last)
             : _buffer(first, last)
         {}
 
@@ -38,24 +39,24 @@ namespace cerb {
             return *this;
         }
 
-        iterator begin()
+        iterator begin() const
         {
             return _buffer.begin();
         }
 
-        iterator end()
+        iterator end() const
         {
             return _buffer.end();
         }
 
         const_iterator cbegin() const
         {
-            return _buffer.cbegin();
+            return _buffer.begin();
         }
 
         const_iterator cend() const
         {
-            return _buffer.cend();
+            return _buffer.end();
         }
 
         size_type size() const
@@ -74,10 +75,9 @@ namespace cerb {
         }
 
         int read(int fd);
-        int write(int fd);
+        void write(int fd);
         void truncate_from_begin(iterator i);
         void buffer_ready(std::vector<struct iovec>& iov);
-        void copy_from(const_iterator first, const_iterator last);
         void append_from(const_iterator first, const_iterator last);
         std::string to_string() const;
         bool same_as_string(std::string const& s) const;

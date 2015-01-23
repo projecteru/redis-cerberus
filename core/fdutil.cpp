@@ -1,3 +1,4 @@
+#include <climits>
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
@@ -88,4 +89,28 @@ void cerb::bind_to(int fd, int port)
         throw SystemError("bind", errno);
     }
     ::listen(fd, 20);
+}
+
+void cerb::writev(int fd, int n, std::vector<struct iovec> const& iov)
+{
+    int ntotal = 0, written_iov = 0, rest_iov = iov.size();
+    LOG(DEBUG) << "+write to " << fd << " total vector size: " << rest_iov;
+
+    while (written_iov < int(iov.size())) {
+        int iovcnt = std::min(rest_iov, IOV_MAX);
+        int nwrite = writev(fd, iov.data() + written_iov, iovcnt);
+        if (nwrite < 0) {
+            if (errno == EAGAIN) {
+                continue;
+            }
+            throw IOError("+writev", errno);
+        }
+        ntotal += nwrite;
+        rest_iov -= iovcnt;
+        written_iov += iovcnt;
+    }
+
+    if (ntotal != n) {
+        throw IOError("+writev (should recover)", errno);
+    }
 }

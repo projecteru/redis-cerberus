@@ -1,8 +1,6 @@
-#include <climits>
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/epoll.h>
-#include <algorithm>
 
 #include "proxy.hpp"
 #include "response.hpp"
@@ -94,35 +92,16 @@ void Server::_send_to()
     }
 
     std::vector<struct iovec> iov;
-    int n = 0, ntotal = 0, written_iov = 0;
+    int total_bytes = 0;
 
     this->_ready_commands = std::move(this->_commands);
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
                   [&](util::sref<Command>& cmd)
                   {
                       cmd->buffer.buffer_ready(iov);
-                      n += cmd->buffer.size();
+                      total_bytes += cmd->buffer.size();
                   });
-    LOG(DEBUG) << "+write to " << this->fd << " total vector size: " << iov.size();
-    int rest_iov = iov.size();
-
-    while (written_iov < int(iov.size())) {
-        int iovcnt = std::min(rest_iov, IOV_MAX);
-        int nwrite = writev(this->fd, iov.data() + written_iov, iovcnt);
-        if (nwrite < 0) {
-            if (errno == EAGAIN) {
-                continue;
-            }
-            throw IOError("+writev", errno);
-        }
-        ntotal += nwrite;
-        rest_iov -= iovcnt;
-        written_iov += iovcnt;
-    }
-
-    if (ntotal != n) {
-        throw IOError("+writev (should recover)", errno);
-    }
+    cerb::writev(this->fd, total_bytes, iov);
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;

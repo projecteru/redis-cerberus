@@ -1,5 +1,6 @@
 cerberus
 *.o
+*.gch
 *.pyc
 *.tmp
 tmp.*
