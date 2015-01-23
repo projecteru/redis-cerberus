@@ -1,7 +1,7 @@
 #ifndef __CERBERUS_COMMON_HPP__
 #define __CERBERUS_COMMON_HPP__
 
-#include "typetraits.hpp"
+#include "utils/typetraits.hpp"
 
 namespace cerb {
 
