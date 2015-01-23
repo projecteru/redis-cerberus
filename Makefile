@@ -16,7 +16,7 @@ all:main.d core_objs utilities libs_3rdparty
 
 runtest:core_objs utilities
 	make -f test/Makefile MODE=$(MODE) COMPILER=$(COMPILER) \
-                          CHECK_MEM=$(CHECK_MEM)
+	                      CHECK_MEM=$(CHECK_MEM)
 
 utilities:
 	make -f utils/Makefile MODE=$(MODE) COMPILER=$(COMPILER)

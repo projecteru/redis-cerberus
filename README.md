@@ -15,10 +15,6 @@ To build, just
 
     make
 
-to run test (just cover message parsing parts)
-
-    make runtest
-
 turn on all debug logs
 
     make MODE=debug
@@ -30,6 +26,14 @@ or compile with g艹
 To link libstdc++ statically, use
 
     make STATIC_LINK=1
+
+to run test (just cover message parsing parts)
+
+    make runtest
+
+run test with valgrind checking
+
+    make runtest CHECK_MEM=1
 
 Run
 ===
