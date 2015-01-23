@@ -3,11 +3,30 @@
 
 #include <string>
 
+#include "common.hpp"
+
 namespace cerb {
 
     class Proxy;
 
     std::string stats_all();
+
+    class BufferStatAllocator
+        : public std::allocator<byte>
+    {
+        typedef std::allocator<byte> BaseType;
+    public:
+        BufferStatAllocator() = default;
+        BufferStatAllocator(BufferStatAllocator const&) = default;
+
+        template <typename U>
+        BufferStatAllocator(std::allocator<U> const& rhs)
+            : BaseType(rhs)
+        {}
+
+        pointer allocate(size_type n, void const* hint=nullptr);
+        void deallocate(pointer p, size_type n);
+    };
 
 }
 

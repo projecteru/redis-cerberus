@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "utils/pointer.h"
-#include "common.hpp"
 #include "command.hpp"
 #include "slot_map.hpp"
 #include "fdutil.hpp"

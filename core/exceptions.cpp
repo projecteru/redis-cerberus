@@ -9,7 +9,7 @@ using namespace cerb;
 static std::string format_byte_in(byte what)
 {
     std::stringstream ss;
-    ss << "Unexpected token " << char(what) << " (" << what << ")";
+    ss << "Unexpected token " << char(what) << " (" << int(what) << ")";
     return ss.str();
 }
 

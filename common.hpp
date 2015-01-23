@@ -8,6 +8,7 @@ namespace cerb {
     typedef tp::UInt<1>::type byte;
     typedef tp::Int<8>::type rint;
     typedef unsigned int slot;
+    typedef tp::UInt<8>::type msize_t;
 
 }
 

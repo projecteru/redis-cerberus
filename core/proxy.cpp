@@ -98,7 +98,7 @@ void Server::_send_to()
 
     this->_ready_commands = std::move(this->_commands);
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sref<Command>& cmd)
+                  [&](util::sref<Command> cmd)
                   {
                       cmd->buffer.buffer_ready(iov);
                       n += cmd->buffer.size();

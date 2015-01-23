@@ -4,19 +4,20 @@
 #include <vector>
 #include <string>
 
-#include "common.hpp"
+#include "stats.hpp"
 
 struct iovec;
 
 namespace cerb {
 
     class Buffer {
-        std::vector<byte> _buffer;
+        typedef std::vector<byte, BufferStatAllocator> ContainerType;
+        ContainerType _buffer;
     public:
-        typedef std::vector<byte>::size_type size_type;
-        typedef std::vector<byte>::value_type value_type;
-        typedef std::vector<byte>::iterator iterator;
-        typedef std::vector<byte>::const_iterator const_iterator;
+        typedef ContainerType::size_type size_type;
+        typedef ContainerType::value_type value_type;
+        typedef ContainerType::iterator iterator;
+        typedef ContainerType::const_iterator const_iterator;
 
         Buffer() {}
 
