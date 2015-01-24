@@ -241,6 +241,9 @@ void SlotsMapUpdater::_send_cmd()
 void SlotsMapUpdater::_recv_rsp()
 {
     _rsp.read(this->fd);
+    LOG(DEBUG) << "+read slots from " << this->fd
+               << " buffer size " << this->_rsp.size()
+               << ": " << this->_rsp.to_string();
     std::vector<util::sptr<Response>> rsp(split_server_response(_rsp));
     if (rsp.size() == 0) {
         return this->_await_data();
@@ -262,7 +265,17 @@ void SlotsMapUpdater::triggered(int events)
         throw ConnectionHungUp();
     }
     if (events & EPOLLIN) {
-        this->_recv_rsp();
+        try {
+            this->_recv_rsp();
+        } catch (BadRedisMessage& e) {
+            LOG(FATAL) << "Receive bad message from server on update from "
+                       << this->fd
+                       << " because: " << e.what()
+                       << " buffer length=" << this->_rsp.size()
+                       << " dump buffer (before close): "
+                       << this->_rsp.to_string();
+            exit(1);
+        }
     }
     if (events & EPOLLOUT) {
         this->_send_cmd();
@@ -630,8 +643,10 @@ void Proxy::_loop()
 
     std::set<Connection*> active_conns;
     std::set<Connection*> closed_conns;
+    LOG(DEBUG) << "*epoll wait: " << nfds;
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
+        LOG(DEBUG) << "*epoll process " << conn->fd;
         if (closed_conns.find(conn) != closed_conns.end()) {
             continue;
         }
@@ -645,6 +660,7 @@ void Proxy::_loop()
             closed_conns.insert(conn);
         }
     }
+    LOG(DEBUG) << "*epoll done";
     std::for_each(active_conns.begin(), active_conns.end(),
                   [&](Connection* c)
                   {

@@ -63,6 +63,7 @@ void cerb::connect_fd(std::string const& host, int port, int fd)
                 sizeof serv_addr) < 0)
     {
         if (errno == EINPROGRESS) {
+            LOG(DEBUG) << "+connect in progress " << fd;
             return;
         }
         throw ConnectionRefused(host, port, errno);
