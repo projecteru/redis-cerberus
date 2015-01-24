@@ -2,7 +2,7 @@
 #include <sstream>
 
 #include "exceptions.hpp"
-#include "../utils/string.h"
+#include "utils/string.h"
 
 using namespace cerb;
 
