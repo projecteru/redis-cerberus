@@ -660,7 +660,7 @@ void Proxy::_loop()
 Server* Proxy::get_server_by_slot(slot key_slot)
 {
     Server* s = _server_map.get_by_slot(key_slot);
-    return (s->fd == -1) ? nullptr : s;
+    return (s == nullptr || s->fd == -1) ? nullptr : s;
 }
 
 void Proxy::accept_from(int listen_fd)
