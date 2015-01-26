@@ -726,7 +726,7 @@ namespace {
         "HEXISTS", "HINCRBY", "HINCRBYFLOAT", "HKEYS", "HMGET", "HMSET", "HSCAN",
 
         "LINDEX", "LINSERT", "LLEN", "LPOP", "RPOP", "LPUSH", "LPUSHX",
-        "RPUSH", "RPUSHX", "LRANGE", "LREM", "LSET", "LTRIM",
+        "RPUSH", "RPUSHX", "LRANGE", "LREM", "LSET", "LTRIM", "SORT",
 
         "SCARD", "SADD", "SISMEMBER", "SMEMBERS", "SPOP", "SRANDMEMBER",
         "SREM", "SSCAN",
