@@ -303,19 +303,19 @@ void Client::triggered(int events)
     if (events & EPOLLRDHUP) {
         return this->close();
     }
-    if (events & EPOLLIN) {
-        try {
+    try {
+        if (events & EPOLLIN) {
             this->_recv_from();
-        } catch (BadRedisMessage& e) {
-            LOG(ERROR) << "Receive bad message from client " << this->fd
-                       << " because: " << e.what()
-                       << " dump buffer (before close): "
-                       << this->_buffer.to_string();
-            return this->close();
         }
-    }
-    if (events & EPOLLOUT) {
-        this->_send_to();
+        if (events & EPOLLOUT) {
+            this->_send_to();
+        }
+    } catch (BadRedisMessage& e) {
+        LOG(ERROR) << "Receive bad message from client " << this->fd
+                   << " because: " << e.what()
+                   << " dump buffer (before close): "
+                   << this->_buffer.to_string();
+        return this->close();
     }
 }
 

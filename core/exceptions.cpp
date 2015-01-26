@@ -1,13 +1,20 @@
 #include <cstring>
 #include <sstream>
+#include <iostream>
 
 #include "exceptions.hpp"
 #include "utils/string.h"
+#include "backtracpp/trace.h"
+
 
 using namespace cerb;
 
 static std::string format_byte_in(byte what)
 {
+    std::cerr << "=== Trace BadRedisMessage" << std::endl;
+    trac::print_trace(std::cerr);
+    std::cerr << "=== Traced" << std::endl;
+
     std::stringstream ss;
     ss << "Unexpected token " << char(what) << " (" << int(what) << ")";
     return ss.str();
