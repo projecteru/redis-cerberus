@@ -1,21 +1,22 @@
-#include <sstream>
-
 #include "core/stats.hpp"
 #include "core/globals.hpp"
+#include "utils/string.h"
 
 using namespace cerb;
 
 std::string cerb::stats_all()
 {
-    std::stringstream ss;
-    ss << "threads:" << cerb_global::all_threads.size()
-       << "\nclients_count:";
+    std::vector<std::string> clients_counts;
+    std::vector<std::string> mem_buffer_allocs;
     for (auto const& thread: cerb_global::all_threads) {
-        ss << thread.get_proxy()->clients_count() << ',';
+        clients_counts.push_back(util::str(thread.get_proxy()->clients_count()));
+        mem_buffer_allocs.push_back(util::str(thread.buffer_allocated()));
     }
-    ss << "\nactive_masters_count:"
-       << cerb_global::current_proxy->masters_count();
-    return ss.str();
+    return util::join("", {
+        "threads:", util::str(msize_t(cerb_global::all_threads.size())),
+        "\nclients_count:", util::join(",", clients_counts),
+        "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
+    });
 }
 
 BufferStatAllocator::pointer BufferStatAllocator::allocate(

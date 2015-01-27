@@ -7,8 +7,6 @@
 
 namespace cerb {
 
-    class Proxy;
-
     std::string stats_all();
 
     class BufferStatAllocator
@@ -18,6 +16,11 @@ namespace cerb {
     public:
         BufferStatAllocator() = default;
         BufferStatAllocator(BufferStatAllocator const&) = default;
+
+        template<class U>
+        struct rebind {
+            typedef BufferStatAllocator other;
+        };
 
         template <typename U>
         BufferStatAllocator(std::allocator<U> const& rhs)

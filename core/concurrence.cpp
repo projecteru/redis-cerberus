@@ -10,6 +10,7 @@ ListenThread::ListenThread(int listen_port, std::string const& remote)
     : _listen_port(listen_port)
     , _proxy(new Proxy(util::Address::from_host_port(remote)))
     , _thread(nullptr)
+    , _mem_buffer_stat(nullptr)
 {}
 
 void ListenThread::run()
@@ -17,7 +18,7 @@ void ListenThread::run()
     this->_thread.reset(new std::thread(
         [=]()
         {
-            cerb_global::current_proxy = *_proxy;
+            _mem_buffer_stat = &cerb_global::allocated_buffer;
             try {
                 this->_proxy->run(this->_listen_port);
             } catch (std::runtime_error& e) {

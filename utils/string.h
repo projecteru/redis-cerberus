@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 
+#include "common.hpp"
+
 namespace util {
 
     typedef std::string::size_type ssize_type;
@@ -19,10 +21,12 @@ namespace util {
     std::string str(double d);
     std::string str(bool b);
     std::string str(void const* p);
+    std::string str(cerb::msize_t s);
 
     std::vector<std::string> split_str(std::string const& str,
                                        std::string const& delimiters=" ",
                                        bool trimEmpty=false);
+    std::string join(std::string const& sep, std::vector<std::string> const& values);
 
 }
 

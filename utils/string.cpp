@@ -73,6 +73,11 @@ std::string util::str(void const* p)
     return str_from_something(p);
 }
 
+std::string util::str(cerb::msize_t s)
+{
+    return str_from_something(s);
+}
+
 std::vector<std::string> util::split_str(std::string const& str,
                                          std::string const& delimiters,
                                          bool trimEmpty)
@@ -95,4 +100,27 @@ std::vector<std::string> util::split_str(std::string const& str,
        }
        lastPos = pos + 1;
     }
+}
+
+std::string util::join(std::string const& sep, std::vector<std::string> const& values)
+{
+    if (values.empty()) {
+        return "";
+    }
+    std::string result;
+    result.reserve(sep.size() * (values.size() - 1) + std::accumulate(
+        values.begin(), values.end(), 0,
+        [](std::string::size_type len, std::string const& s)
+        {
+            return len + s.size();
+        }));
+    result += values[0];
+    std::for_each(++values.begin()
+                , values.end()
+                , [&](std::string const& v)
+                  {
+                      result += sep;
+                      result += v;
+                  });
+    return std::move(result);
 }

@@ -3,8 +3,9 @@
 
 #include <thread>
 
-#include "utils/pointer.h"
+#include "common.hpp"
 #include "proxy.hpp"
+#include "utils/pointer.h"
 
 namespace cerb {
 
@@ -12,6 +13,7 @@ namespace cerb {
         int const _listen_port;
         util::sptr<Proxy> _proxy;
         util::sptr<std::thread> _thread;
+        msize_t const* _mem_buffer_stat;
     public:
         ListenThread(int listen_port, std::string const& remote);
         ListenThread(ListenThread const&) = delete;
@@ -20,6 +22,7 @@ namespace cerb {
             : _listen_port(rhs._listen_port)
             , _proxy(std::move(rhs._proxy))
             , _thread(std::move(rhs._thread))
+            , _mem_buffer_stat(rhs._mem_buffer_stat)
         {}
 
         void run();
@@ -28,6 +31,11 @@ namespace cerb {
         util::sref<Proxy const> get_proxy() const
         {
             return *_proxy;
+        }
+
+        msize_t buffer_allocated() const
+        {
+            return *_mem_buffer_stat;
         }
     };
 
