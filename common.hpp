@@ -3,6 +3,8 @@
 
 #include "utils/typetraits.hpp"
 
+#define VERSION "0.4.1-2015-01-31"
+
 namespace cerb {
 
     typedef tp::UInt<1>::type byte;

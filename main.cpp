@@ -93,6 +93,8 @@ namespace {
 int main(int argc, char* argv[])
 {
     if (argc == 1) {
+        std::cerr << "Cerberus version " VERSION
+                     " Copyright (c) HunanTV Platform developers" << std::endl;
         std::cerr << "Usage:" << std::endl;
         std::cerr << "    cerberus CONFIG_FILE" << std::endl;
         return 1;

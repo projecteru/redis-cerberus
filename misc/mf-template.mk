@@ -18,8 +18,8 @@ CFLAGS=-Wall -Wextra -Wold-style-cast -Werror $(OPT_FLAGS)
 MKTMP := $(shell mktemp)
 
 LIBS_DIR=libs
-LIBS=-lpthread
-WORK_LIBS=-L$(LIBS_DIR) -lbacktracpp $(LIBS)
+LIBS=-L$(LIBS_DIR) -lpthread -lbacktracpp
+WORK_LIBS=$(LIBS)
 TEST_LIBS=-lgtest -lgtest_main $(LIBS)
 
 COMPILE=$(CC) $(CFLAGS) $(INCLUDE)

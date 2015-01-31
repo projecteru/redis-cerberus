@@ -3,6 +3,8 @@
 
 #include <string>
 
+struct iovec;
+
 namespace cerb {
 
     class FDWrapper {

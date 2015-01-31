@@ -1,4 +1,3 @@
-#include <climits>
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/epoll.h>
@@ -94,7 +93,7 @@ void Server::_send_to()
     }
 
     std::vector<struct iovec> iov;
-    int n = 0, ntotal = 0, written_iov = 0;
+    int n = 0;
 
     this->_ready_commands = std::move(this->_commands);
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
@@ -104,25 +103,7 @@ void Server::_send_to()
                       n += cmd->buffer.size();
                   });
     LOG(DEBUG) << "+write to " << this->fd << " total vector size: " << iov.size();
-    int rest_iov = iov.size();
-
-    while (written_iov < int(iov.size())) {
-        int iovcnt = std::min(rest_iov, IOV_MAX);
-        int nwrite = writev(this->fd, iov.data() + written_iov, iovcnt);
-        if (nwrite < 0) {
-            if (errno == EAGAIN) {
-                continue;
-            }
-            throw IOError("+writev", errno);
-        }
-        ntotal += nwrite;
-        rest_iov -= iovcnt;
-        written_iov += iovcnt;
-    }
-
-    if (ntotal != n) {
-        throw IOError("+writev (should recover)", errno);
-    }
+    Buffer::writev(this->fd, n, iov);
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
@@ -330,7 +311,7 @@ void Client::_send_to()
     }
 
     std::vector<struct iovec> iov;
-    int n = 0, nwrite = -1;
+    int n = 0;
 
     this->_ready_groups = std::move(this->_awaiting_groups);
     std::for_each(this->_ready_groups.begin(), this->_ready_groups.end(),
@@ -341,19 +322,7 @@ void Client::_send_to()
                   });
 
     LOG(DEBUG) << "-write to " << this->fd << " total vector size: " << iov.size();
-    while (true) {
-        nwrite = writev(this->fd, iov.data(), iov.size());
-        if (nwrite < 0) {
-            if (errno == EAGAIN) {
-                continue;
-            }
-            throw IOError("-writev", errno);
-        }
-        break;
-    }
-    if (nwrite != n) {
-        throw IOError("-writev (should recover)", errno);
-    }
+    Buffer::writev(this->fd, n, iov);
     this->_ready_groups.clear();
     this->_peers.clear();
 
@@ -477,7 +446,7 @@ Proxy::Proxy(util::Address const& remote)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
-        throw std::runtime_error("epoll_create");
+        throw SystemError("epoll_create", errno);
     }
     _slot_updaters.push_back(util::mkptr(new SlotsMapUpdater(remote, this)));
     ++_active_slot_updaters_count;

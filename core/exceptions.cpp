@@ -3,6 +3,7 @@
 
 #include "exceptions.hpp"
 #include "utils/string.h"
+#include "backtracpp/trace.h"
 
 using namespace cerb;
 
@@ -10,6 +11,13 @@ static std::string format_byte_in(byte what)
 {
     std::stringstream ss;
     ss << "Unexpected token " << char(what) << " (" << int(what) << ")";
+    return ss.str();
+}
+
+static std::string stacktrace()
+{
+    std::stringstream ss;
+    trac::print_trace(ss);
     return ss.str();
 }
 
@@ -29,6 +37,7 @@ static std::string error_message(int errcode)
 
 SystemError::SystemError(std::string const& what, int errcode)
     : std::runtime_error(what + " " + error_message(errcode))
+    , stack_trace(stacktrace())
 {}
 
 UnknownHost::UnknownHost(std::string const& host)

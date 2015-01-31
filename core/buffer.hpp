@@ -82,6 +82,9 @@ namespace cerb {
         void append_from(const_iterator first, const_iterator last);
         std::string to_string() const;
         bool same_as_string(std::string const& s) const;
+
+        static void writev(int fd, int total_bytes,
+                           std::vector<struct iovec> const& iov);
     };
 
 }

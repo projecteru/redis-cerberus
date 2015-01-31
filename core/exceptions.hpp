@@ -28,6 +28,7 @@ namespace cerb {
         : public std::runtime_error
     {
     public:
+        std::string const stack_trace;
         SystemError(std::string const& what, int errcode);
     };
 

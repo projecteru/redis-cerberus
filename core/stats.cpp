@@ -13,7 +13,8 @@ std::string cerb::stats_all()
         mem_buffer_allocs.push_back(util::str(thread.buffer_allocated()));
     }
     return util::join("", {
-        "threads:", util::str(msize_t(cerb_global::all_threads.size())),
+        "version:" VERSION
+        "\nthreads:", util::str(msize_t(cerb_global::all_threads.size())),
         "\nclients_count:", util::join(",", clients_counts),
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
     });
