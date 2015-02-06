@@ -9,7 +9,8 @@
 
 using namespace cerb;
 
-int const BUFFER_SIZE = 16 * 1024;
+static int const BUFFER_SIZE = 16 * 1024;
+static int const WRITEV_CHUNK_SIZE = 2 * 1024 * 1024;
 
 static void on_error(std::string const& message)
 {
@@ -45,9 +46,6 @@ int Buffer::read(int fd)
     }
     if (nread == -1) {
         on_error("buffer read");
-        if (n == 0) {
-            return -1;
-        }
     }
     return n;
 }
@@ -59,9 +57,12 @@ int Buffer::write(int fd)
         int nwrite = ::write(fd, _buffer.data() + n, _buffer.size() - n);
         if (nwrite == -1) {
             on_error("buffer write");
+            continue;
         }
+        LOG(DEBUG) << "Write to " << fd << " : " << nwrite << " bytes written";
         n += nwrite;
     }
+    LOG(DEBUG) << "Total written " << fd << " : " << n << " bytes";
     return n;
 }
 
@@ -107,24 +108,58 @@ bool Buffer::same_as_string(std::string const& s) const
                                                     });
 }
 
-void Buffer::writev(int fd, int n, std::vector<struct iovec> const& iov)
+static void write_vec(int fd, int iovcnt, struct iovec* iov, ssize_t total)
 {
-    int ntotal = 0, written_iov = 0, rest_iov = iov.size();
-    LOG(DEBUG) << "*write to " << fd << " total vector size: " << rest_iov;
-
-    while (written_iov < int(iov.size())) {
-        int iovcnt = std::min(rest_iov, IOV_MAX);
-        int nwrite = ::writev(fd, iov.data() + written_iov, iovcnt);
-        if (nwrite < 0) {
-            on_error("*writev");
+    LOG(DEBUG) << "*writev to " << fd << " iovcnt=" << iovcnt << " total bytes=" << total;
+    ssize_t written;
+    while (total != (written = ::writev(fd, iov, iovcnt))) {
+        if (written == -1) {
+            on_error("buffer writev");
             continue;
         }
-        ntotal += nwrite;
-        rest_iov -= iovcnt;
-        written_iov += iovcnt;
+        LOG(DEBUG) << "*writev partial written bytes=" << written << " need to write=" << total;
+        total -= written;
+        while (iov->iov_len <= size_t(written)) {
+            written -= iov->iov_len;
+            ++iov;
+            --iovcnt;
+        }
+        iov->iov_base = reinterpret_cast<byte*>(iov->iov_base) + written;
+        iov->iov_len -= written;
     }
+}
 
-    if (ntotal != n) {
-        throw SystemError("*writev (should recover)", errno);
+void Buffer::writev(int fd, std::vector<util::sref<Buffer>> const& arr)
+{
+    struct iovec vec[IOV_MAX];
+    int iov_index = 0;
+    size_type bulk_write_size = 0;
+    if (arr.size() == 1) {
+        arr[0]->write(fd);
+        return;
+    }
+    for (auto b: arr) {
+        if (iov_index == IOV_MAX
+            || bulk_write_size + b->size() > WRITEV_CHUNK_SIZE)
+        {
+            write_vec(fd, iov_index, vec, bulk_write_size);
+            iov_index = 0;
+            bulk_write_size = 0;
+        }
+        if (b->size() > WRITEV_CHUNK_SIZE) {
+            b->write(fd);
+            continue;
+        }
+        vec[iov_index].iov_base = b->_buffer.data();
+        vec[iov_index].iov_len = b->size();
+        ++iov_index;
+        bulk_write_size += b->size();
+    }
+    if (iov_index == 1) {
+        arr.back()->write(fd);
+        return;
+    }
+    if (iov_index > 1) {
+        write_vec(fd, iov_index, vec, bulk_write_size);
     }
 }

@@ -92,18 +92,13 @@ void Server::_send_to()
         return;
     }
 
-    std::vector<struct iovec> iov;
-    int n = 0;
-
+    std::vector<util::sref<Buffer>> buffer_arr;
     this->_ready_commands = std::move(this->_commands);
-    std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sref<Command> cmd)
-                  {
-                      cmd->buffer.buffer_ready(iov);
-                      n += cmd->buffer.size();
-                  });
-    LOG(DEBUG) << "+write to " << this->fd << " total vector size: " << iov.size();
-    Buffer::writev(this->fd, n, iov);
+    buffer_arr.reserve(this->_ready_commands.size());
+    for (auto const& c: this->_ready_commands) {
+        buffer_arr.push_back(util::mkref(c->buffer));
+    }
+    Buffer::writev(this->fd, buffer_arr);
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
@@ -310,19 +305,12 @@ void Client::_send_to()
         return;
     }
 
-    std::vector<struct iovec> iov;
-    int n = 0;
-
+    std::vector<util::sref<Buffer>> buffer_arr;
     this->_ready_groups = std::move(this->_awaiting_groups);
-    std::for_each(this->_ready_groups.begin(), this->_ready_groups.end(),
-                  [&](util::sptr<CommandGroup>& g)
-                  {
-                      g->append_buffer_to(iov);
-                      n += g->total_buffer_size();
-                  });
-
-    LOG(DEBUG) << "-write to " << this->fd << " total vector size: " << iov.size();
-    Buffer::writev(this->fd, n, iov);
+    for (auto const& g: this->_ready_groups) {
+        g->append_buffer_to(buffer_arr);
+    }
+    Buffer::writev(this->fd, buffer_arr);
     this->_ready_groups.clear();
     this->_peers.clear();
 

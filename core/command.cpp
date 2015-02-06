@@ -345,16 +345,15 @@ namespace {
         class MSetCommandGroup
             : public CommandGroup
         {
-            static std::string const R;
+            static Buffer R;
         public:
             explicit MSetCommandGroup(util::sref<Client> c)
                 : CommandGroup(c)
             {}
 
-            void append_buffer_to(std::vector<struct iovec>& iov)
+            void append_buffer_to(std::vector<util::sref<Buffer>>& b)
             {
-                arr_payload = Buffer::from_string(R);
-                arr_payload.buffer_ready(iov);
+                b.push_back(util::mkref(R));
             }
 
             int total_buffer_size() const
@@ -415,7 +414,7 @@ namespace {
             return std::move(g);
         }
     };
-    std::string const MSetCommandParser::MSetCommandGroup::R("+OK\r\n");
+    Buffer MSetCommandParser::MSetCommandGroup::R(Buffer::from_string("+OK\r\n"));
 
     class RenameCommandParser
         : public SpecialCommandParser
@@ -952,14 +951,12 @@ void CommandGroup::append_command(util::sptr<Command> c)
     commands.push_back(std::move(c));
 }
 
-void CommandGroup::append_buffer_to(std::vector<struct iovec>& iov)
+void CommandGroup::append_buffer_to(std::vector<util::sref<Buffer>>& b)
 {
-    arr_payload.buffer_ready(iov);
-    std::for_each(commands.begin(), commands.end(),
-                  [&](util::sptr<Command>& command)
-                  {
-                      command->buffer.buffer_ready(iov);
-                  });
+    b.push_back(util::mkref(arr_payload));
+    for (auto const& c: commands) {
+        b.push_back(util::mkref(c->buffer));
+    }
 }
 
 int CommandGroup::total_buffer_size() const

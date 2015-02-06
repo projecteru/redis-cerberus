@@ -67,7 +67,7 @@ namespace cerb {
 
         void command_responsed();
         void append_command(util::sptr<Command> c);
-        virtual void append_buffer_to(std::vector<struct iovec>& iov);
+        virtual void append_buffer_to(std::vector<util::sref<Buffer>>& b);
         virtual int total_buffer_size() const;
         virtual void deliver_client(Proxy*, Client*) {}
     };

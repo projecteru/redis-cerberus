@@ -19,6 +19,10 @@ namespace {
         {
             std::map<std::string, std::string> config;
             std::ifstream conf_file(file);
+            if (!conf_file.good()) {
+                std::cerr << "Fail to read config file " << file << std::endl;
+                exit(1);
+            }
             std::string line;
             while (!conf_file.eof()) {
                 std::getline(conf_file, line);

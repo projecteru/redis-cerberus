@@ -5,8 +5,7 @@
 #include <string>
 
 #include "stats.hpp"
-
-struct iovec;
+#include "utils/pointer.h"
 
 namespace cerb {
 
@@ -83,8 +82,7 @@ namespace cerb {
         std::string to_string() const;
         bool same_as_string(std::string const& s) const;
 
-        static void writev(int fd, int total_bytes,
-                           std::vector<struct iovec> const& iov);
+        static void writev(int fd, std::vector<util::sref<Buffer>> const& arr);
     };
 
 }
