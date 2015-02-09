@@ -75,3 +75,43 @@ TEST(Buffer, IO)
     buffer.write(wfd);
     ASSERT_TRUE(filecmp(input, output));
 }
+
+TEST(Buffer, WriteV)
+{
+    Buffer head(Buffer::from_string(
+        "The quick brown fox jumps over a lazy dog.\n"));
+    Buffer tail(Buffer::from_string("El Psy Congroo\n"));
+    FDWrapper infd(::open("test/asset/largefile.txt", O_RDONLY));
+    ASSERT_NE(-1, infd.fd);
+    Buffer body;
+    body.read(infd.fd);
+
+    char const output[] = "tmp.test-buffer-writev.txt";
+    {
+        std::vector<util::sref<Buffer>> bufvec;
+        bufvec.push_back(util::mkref(head));
+        bufvec.push_back(util::mkref(body));
+        bufvec.push_back(util::mkref(tail));
+
+        FDWrapper outfd(::open(output, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR));
+        ASSERT_NE(-1, outfd.fd);
+        Buffer::writev(outfd.fd, bufvec);
+
+        ASSERT_TRUE(filecmp("test/asset/largefile-combined.txt", output));
+    }
+
+    {
+        std::vector<util::sref<Buffer>> bufvec;
+        bufvec.push_back(util::mkref(head));
+        bufvec.push_back(util::mkref(head));
+        bufvec.push_back(util::mkref(body));
+        bufvec.push_back(util::mkref(tail));
+        bufvec.push_back(util::mkref(tail));
+
+        FDWrapper outfd(::open(output, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR));
+        ASSERT_NE(-1, outfd.fd);
+        Buffer::writev(outfd.fd, bufvec);
+
+        ASSERT_TRUE(filecmp("test/asset/largefile-combined-2ht.txt", output));
+    }
+}
