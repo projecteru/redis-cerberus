@@ -86,6 +86,7 @@ namespace cerb {
 
         Proxy* const _proxy;
         std::set<Server*> _peers;
+        std::vector<util::sptr<CommandGroup>> _parsed_groups;
         std::vector<util::sptr<CommandGroup>> _awaiting_groups;
         std::vector<util::sptr<CommandGroup>> _ready_groups;
         int _awaiting_count;
@@ -106,6 +107,8 @@ namespace cerb {
         void group_responsed();
         void add_peer(Server* svr);
         void reactivate(util::sref<Command> cmd);
+        void push_command(util::sptr<CommandGroup> g);
+        void stat_proccessed(Interval cmd_elapse);
     };
 
     class SlotsMapUpdater
@@ -143,6 +146,8 @@ namespace cerb {
         std::vector<util::sptr<SlotsMapUpdater>> _finished_slot_updaters;
         int _active_slot_updaters_count;
         std::vector<util::sref<Command>> _retrying_commands;
+        Interval _total_cmd_elapse;
+        long _total_cmd;
         bool _server_closed;
 
         bool _should_update_slot_map() const;
@@ -163,9 +168,14 @@ namespace cerb {
             return _clients_count;
         }
 
-        int masters_count() const
+        long total_cmd() const
         {
-            return _server_map.addrs_count();
+            return _total_cmd;
+        }
+
+        Interval total_cmd_elapse() const
+        {
+            return _total_cmd_elapse;
         }
 
         util::Address const& random_addr() const
@@ -180,6 +190,7 @@ namespace cerb {
         void run(int listen_port);
         void accept_from(int listen_fd);
         void pop_client(Client* cli);
+        void stat_proccessed(Interval cmd_elapse);
     };
 
 }

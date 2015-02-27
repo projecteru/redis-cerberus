@@ -22,6 +22,7 @@ namespace util {
     std::string str(bool b);
     std::string str(void const* p);
     std::string str(cerb::msize_t s);
+    std::string str(cerb::Interval i);
 
     std::vector<std::string> split_str(std::string const& str,
                                        std::string const& delimiters=" ",

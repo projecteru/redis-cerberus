@@ -7,8 +7,6 @@
 #include "utils/pointer.h"
 #include "buffer.hpp"
 
-struct iovec;
-
 namespace cerb {
 
     class Proxy;
@@ -46,6 +44,7 @@ namespace cerb {
         CommandGroup()
             : client(nullptr)
             , awaiting_count(0)
+            , creation(Clock::now())
             , long_conn_command(true)
         {}
     public:
@@ -53,6 +52,7 @@ namespace cerb {
         Buffer arr_payload;
         std::vector<util::sptr<Command>> commands;
         int awaiting_count;
+        Time const creation;
         bool const long_conn_command;
 
         CommandGroup(CommandGroup const&) = delete;
@@ -60,10 +60,11 @@ namespace cerb {
         explicit CommandGroup(util::sref<Client> c)
             : client(c)
             , awaiting_count(0)
+            , creation(Clock::now())
             , long_conn_command(false)
         {}
 
-        virtual ~CommandGroup() {}
+        virtual ~CommandGroup();
 
         void command_responsed();
         void append_command(util::sptr<Command> c);
@@ -72,8 +73,7 @@ namespace cerb {
         virtual void deliver_client(Proxy*, Client*) {}
     };
 
-    std::vector<util::sptr<CommandGroup>> split_client_command(
-        Buffer& buffer, util::sref<Client> cli);
+    void split_client_command(Buffer& buffer, util::sref<Client> cli);
 
 }
 

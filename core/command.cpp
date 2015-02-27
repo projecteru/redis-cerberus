@@ -749,7 +749,6 @@ namespace {
         slot last_key_slot;
         bool last_command_is_bad;
 
-        std::vector<util::sptr<CommandGroup>> splitted_groups;
         std::function<void(byte)> on_byte;
         std::function<void(Buffer::iterator)> on_element;
 
@@ -776,7 +775,6 @@ namespace {
             , last_command(std::move(rhs.last_command))
             , last_key_slot(rhs.last_key_slot)
             , last_command_is_bad(rhs.last_command_is_bad)
-            , splitted_groups(std::move(rhs.splitted_groups))
             , on_byte(std::move(rhs.on_byte))
             , on_element(std::move(rhs.on_element))
             , special_parser(std::move(rhs.special_parser))
@@ -785,7 +783,7 @@ namespace {
 
         void on_raw_element(Buffer::iterator i)
         {
-            splitted_groups.push_back(quick_rsp(last_command, client));
+            client->push_command(quick_rsp(last_command, client));
             last_command_begin = i;
             BaseType::on_element(i);
         }
@@ -875,7 +873,7 @@ namespace {
             this->on_element = std::bind(&ClientCommandSplitter::on_raw_element,
                                          this, std::placeholders::_1);
             if (last_command_is_bad) {
-                splitted_groups.push_back(only_command(
+                client->push_command(only_command(
                     client,
                     [](util::sref<CommandGroup> g)
                     {
@@ -883,7 +881,7 @@ namespace {
                             "-ERR Unknown command or command key not specified\r\n", g));
                     }));
             } else if (special_parser.nul()) {
-                splitted_groups.push_back(only_command(
+                client->push_command(only_command(
                     client,
                     [&](util::sref<CommandGroup> g)
                     {
@@ -891,7 +889,7 @@ namespace {
                             Buffer(last_command_begin, i), g, last_key_slot));
                     }));
             } else {
-                splitted_groups.push_back(special_parser->spawn_commands(client, i));
+                client->push_command(special_parser->spawn_commands(client, i));
                 special_parser.reset();
             }
             last_command.clear();
@@ -923,6 +921,13 @@ namespace {
         }
     };
 
+}
+
+CommandGroup::~CommandGroup()
+{
+    if (!this->long_conn_command) {
+        this->client->stat_proccessed(Clock::now() - this->creation);
+    }
 }
 
 void Command::copy_response(Buffer rsp, bool)
@@ -970,8 +975,7 @@ int CommandGroup::total_buffer_size() const
     return i;
 }
 
-std::vector<util::sptr<CommandGroup>> cerb::split_client_command(
-    Buffer& buffer, util::sref<Client> cli)
+void cerb::split_client_command(Buffer& buffer, util::sref<Client> cli)
 {
     ClientCommandSplitter c(cerb::msg::split_by(
         buffer.begin(), buffer.end(), ClientCommandSplitter(
@@ -981,5 +985,4 @@ std::vector<util::sptr<CommandGroup>> cerb::split_client_command(
     } else {
         buffer.truncate_from_begin(c.interrupt_point());
     }
-    return std::move(c.splitted_groups);
 }

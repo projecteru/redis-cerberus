@@ -78,6 +78,11 @@ std::string util::str(cerb::msize_t s)
     return str_from_something(s);
 }
 
+std::string util::str(cerb::Interval i)
+{
+    return str_from_something(i.count());
+}
+
 std::vector<std::string> util::split_str(std::string const& str,
                                          std::string const& delimiters,
                                          bool trimEmpty)

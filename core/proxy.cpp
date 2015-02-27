@@ -321,7 +321,7 @@ void Client::_send_to()
         throw SystemError("epoll_ctl-modi", errno);
     }
 
-    if (!this->_buffer.empty()) {
+    if (!this->_parsed_groups.empty()) {
         _process();
     }
 }
@@ -333,10 +333,12 @@ void Client::_recv_from()
     if (n == 0) {
         return this->close();
     }
-    if (!(_awaiting_groups.empty() && _ready_groups.empty())) {
-        return;
+
+    split_client_command(this->_buffer, util::mkref(*this));
+
+    if (_awaiting_groups.empty() && _ready_groups.empty()) {
+        _process();
     }
-    _process();
 }
 
 void Client::reactivate(util::sref<Command> cmd)
@@ -356,17 +358,11 @@ void Client::reactivate(util::sref<Command> cmd)
 
 void Client::_process()
 {
-    auto commands(split_client_command(this->_buffer, util::mkref(*this)));
-    if (commands.size() == 1 && commands[0]->long_conn_command) {
-        epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
-        commands[0]->deliver_client(this->_proxy, this);
-        LOG(DEBUG) << "Convert self to long connection, delete " << this;
-        return this->close();
-    }
-    for (auto i = commands.begin(); i != commands.end(); ++i) {
-        util::sptr<CommandGroup> g(std::move(*i));
+    for (auto& g: this->_parsed_groups) {
         if (g->long_conn_command) {
-            commands[0]->deliver_client(this->_proxy, this);
+            epoll_ctl(this->_proxy->epfd, EPOLL_CTL_DEL, this->fd, nullptr);
+            g->deliver_client(this->_proxy, this);
+            LOG(DEBUG) << "Convert self to long connection, delete " << this;
             return this->close();
         }
 
@@ -381,6 +377,8 @@ void Client::_process()
         }
         _awaiting_groups.push_back(std::move(g));
     }
+    this->_parsed_groups.clear();
+
     if (0 < _awaiting_count) {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
@@ -421,6 +419,16 @@ void Client::group_responsed()
 void Client::add_peer(Server* svr)
 {
     this->_peers.insert(svr);
+}
+
+void Client::stat_proccessed(Interval cmd_elapse)
+{
+    _proxy->stat_proccessed(cmd_elapse);
+}
+
+void Client::push_command(util::sptr<CommandGroup> g)
+{
+    this->_parsed_groups.push_back(std::move(g));
 }
 
 Proxy::Proxy(util::Address const& remote)
@@ -674,4 +682,10 @@ void Proxy::pop_client(Client* cli)
                        return cmd->group->client.is(cli);
                    });
     --this->_clients_count;
+}
+
+void Proxy::stat_proccessed(Interval cmd_elapse)
+{
+    _total_cmd_elapse += cmd_elapse;
+    ++_total_cmd;
 }

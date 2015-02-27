@@ -8,8 +8,14 @@ std::string cerb::stats_all()
 {
     std::vector<std::string> clients_counts;
     std::vector<std::string> mem_buffer_allocs;
+    std::vector<std::string> avg_cmd_elapse;
+    long total_commands = 0;
+    Interval total_cmd_elapse(0);
     for (auto const& thread: cerb_global::all_threads) {
-        clients_counts.push_back(util::str(thread.get_proxy()->clients_count()));
+        util::sref<Proxy const> proxy(thread.get_proxy());
+        clients_counts.push_back(util::str(proxy->clients_count()));
+        total_commands += proxy->total_cmd();
+        total_cmd_elapse += proxy->total_cmd_elapse();
         mem_buffer_allocs.push_back(util::str(thread.buffer_allocated()));
     }
     return util::join("", {
@@ -17,6 +23,8 @@ std::string cerb::stats_all()
         "\nthreads:", util::str(msize_t(cerb_global::all_threads.size())),
         "\nclients_count:", util::join(",", clients_counts),
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
+        "\ncompleted_commands:", util::str(total_commands),
+        "\ntotal_process_elapse:", util::str(total_cmd_elapse),
     });
 }
 
