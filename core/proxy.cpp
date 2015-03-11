@@ -281,10 +281,10 @@ void Client::triggered(int events)
     }
     try {
         if (events & EPOLLIN) {
-            this->_recv_from();
+            this->_read_request();
         }
         if (events & EPOLLOUT) {
-            this->_send_to();
+            this->_write_response();
         }
     } catch (BadRedisMessage& e) {
         LOG(ERROR) << "Receive bad message from client " << this->fd
@@ -295,7 +295,7 @@ void Client::triggered(int events)
     }
 }
 
-void Client::_send_to()
+void Client::_write_response()
 {
     if (this->_awaiting_groups.empty() || _awaiting_count != 0) {
         return;
@@ -326,7 +326,7 @@ void Client::_send_to()
     }
 }
 
-void Client::_recv_from()
+void Client::_read_request()
 {
     int n = this->_buffer.read(this->fd);
     LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size() << " read returns " << n;
@@ -359,21 +359,16 @@ void Client::reactivate(util::sref<Command> cmd)
 void Client::_process()
 {
     for (auto& g: this->_parsed_groups) {
-        if (g->long_conn_command) {
+        if (g->long_connection()) {
             epoll_ctl(this->_proxy->epfd, EPOLL_CTL_DEL, this->fd, nullptr);
-            g->deliver_client(this->_proxy, this);
+            g->deliver_client(this->_proxy);
             LOG(DEBUG) << "Convert self to long connection, delete " << this;
             return this->close();
         }
 
-        if (g->awaiting_count != 0) {
+        if (g->wait_remote()) {
             ++_awaiting_count;
-            for (auto ci = g->commands.begin(); ci != g->commands.end(); ++ci) {
-                Server* s = (*ci)->select_server(this->_proxy);
-                if (s != nullptr) {
-                    this->_peers.insert(s);
-                }
-            }
+            g->select_remote(this->_peers, this->_proxy);
         }
         _awaiting_groups.push_back(std::move(g));
     }
@@ -438,6 +433,8 @@ Proxy::Proxy(util::Address const& remote)
                       return new Server(host, port, this);
                   })
     , _active_slot_updaters_count(0)
+    , _total_cmd_elapse(0)
+    , _total_cmd(0)
     , _server_closed(false)
     , epfd(epoll_create(MAX_EVENTS))
 {

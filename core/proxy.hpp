@@ -81,8 +81,8 @@ namespace cerb {
     class Client
         : public ProxyConnection
     {
-        void _send_to();
-        void _recv_from();
+        void _write_response();
+        void _read_request();
 
         Proxy* const _proxy;
         std::set<Server*> _peers;

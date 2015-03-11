@@ -40,37 +40,27 @@ namespace cerb {
     };
 
     class CommandGroup {
-    protected:
-        CommandGroup()
-            : client(nullptr)
-            , awaiting_count(0)
-            , creation(Clock::now())
-            , long_conn_command(true)
-        {}
     public:
-        util::sref<Client> client;
-        Buffer arr_payload;
-        std::vector<util::sptr<Command>> commands;
-        int awaiting_count;
-        Time const creation;
-        bool const long_conn_command;
+        util::sref<Client> const client;
+
+        CommandGroup(util::sref<Client> cli)
+            : client(cli)
+        {}
 
         CommandGroup(CommandGroup const&) = delete;
+        virtual ~CommandGroup() {}
 
-        explicit CommandGroup(util::sref<Client> c)
-            : client(c)
-            , awaiting_count(0)
-            , creation(Clock::now())
-            , long_conn_command(false)
-        {}
+        virtual bool long_connection() const
+        {
+            return false;
+        }
 
-        virtual ~CommandGroup();
-
-        void command_responsed();
-        void append_command(util::sptr<Command> c);
-        virtual void append_buffer_to(std::vector<util::sref<Buffer>>& b);
-        virtual int total_buffer_size() const;
-        virtual void deliver_client(Proxy*, Client*) {}
+        virtual void deliver_client(Proxy*) {}
+        virtual bool wait_remote() const = 0;
+        virtual void select_remote(std::set<Server*>& servers, Proxy* proxy) = 0;
+        virtual void append_buffer_to(std::vector<util::sref<Buffer>>& b) = 0;
+        virtual int total_buffer_size() const = 0;
+        virtual void command_responsed() = 0;
     };
 
     void split_client_command(Buffer& buffer, util::sref<Client> cli);
