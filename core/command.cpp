@@ -687,7 +687,7 @@ namespace {
             {
                 new Subscription(p, this->client->fd, p->random_addr(),
                                  std::move(buffer));
-                LOG(DEBUG) << "Deliver " << client << "'s FD "
+                LOG(DEBUG) << "Deliver " << client.id().str() << "'s FD "
                            << this->client->fd << " as subscription client";
                 this->client->fd = -1;
             }
