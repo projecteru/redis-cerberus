@@ -7,52 +7,13 @@
 #include "proxy.hpp"
 #include "subscription.hpp"
 #include "stats.hpp"
+#include "slot_calc.hpp"
 #include "utils/logging.hpp"
 #include "utils/random.hpp"
 
 using namespace cerb;
 
 namespace {
-
-    uint16_t const CRC16TAB[] = {
-        0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
-        0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
-        0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
-        0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
-        0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
-        0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
-        0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
-        0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
-        0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
-        0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
-        0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
-        0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
-        0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
-        0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
-        0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
-        0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
-        0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
-        0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
-        0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
-        0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
-        0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
-        0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
-        0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
-        0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
-        0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
-        0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
-        0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
-        0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
-        0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
-        0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
-        0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
-        0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
-    };
-
-    slot crc16(slot crc, byte next_byte)
-    {
-        return (crc << 8) ^ CRC16TAB[((crc >> 8) ^ next_byte) & 0xFF];
-    }
 
     Server* select_server_for(Proxy* proxy, Command* cmd, slot key_slot)
     {
@@ -73,8 +34,10 @@ namespace {
     public:
         OneSlotCommand(Buffer b, util::sref<CommandGroup> g, slot ks)
             : Command(std::move(b), g, true)
-            , key_slot(ks & (CLUSTER_SLOT_COUNT - 1))
-        {}
+            , key_slot(ks)
+        {
+            LOG(DEBUG) << "-Keyslot = " << this->key_slot;
+        }
 
         Server* select_server(Proxy* proxy)
         {
@@ -407,7 +370,7 @@ namespace {
     class EachKeyCommandParser
         : public SpecialCommandParser
     {
-        slot last_key_slot;
+        KeySlotCalc slot_calc;
         std::string const command_name;
         std::vector<Buffer::iterator> keys_split_points;
         std::vector<slot> keys_slots;
@@ -415,21 +378,20 @@ namespace {
         virtual Buffer command_header() const = 0;
     public:
         EachKeyCommandParser(Buffer::iterator arg_begin, std::string cmd)
-            : last_key_slot(0)
-            , command_name(std::move(cmd))
+            : command_name(std::move(cmd))
         {
             keys_split_points.push_back(arg_begin);
         }
 
         void on_byte(byte b)
         {
-            last_key_slot = crc16(last_key_slot, b);
+            slot_calc.next_byte(b);
         }
 
         void on_element(Buffer::iterator i)
         {
-            keys_slots.push_back(last_key_slot);
-            last_key_slot = 0;
+            keys_slots.push_back(slot_calc.get_slot());
+            slot_calc.reset();
             keys_split_points.push_back(i);
         }
 
@@ -502,12 +464,11 @@ namespace {
 
         std::vector<Buffer::iterator> kv_split_points;
         std::vector<slot> keys_slots;
-        slot last_key_slot;
+        KeySlotCalc slot_calc;
         bool current_is_key;
     public:
         explicit MSetCommandParser(Buffer::iterator arg_begin)
-            : last_key_slot(0)
-            , current_is_key(true)
+            : current_is_key(true)
         {
             kv_split_points.push_back(arg_begin);
         }
@@ -515,15 +476,15 @@ namespace {
         void on_byte(byte b)
         {
             if (current_is_key) {
-                last_key_slot = crc16(last_key_slot, b);
+                slot_calc.next_byte(b);
             }
         }
 
         void on_element(Buffer::iterator i)
         {
             if (current_is_key) {
-                keys_slots.push_back(last_key_slot);
-                last_key_slot = 0;
+                keys_slots.push_back(slot_calc.get_slot());
+                slot_calc.reset();
             }
             current_is_key = !current_is_key;
             kv_split_points.push_back(i);
@@ -619,7 +580,7 @@ namespace {
 
         Buffer::iterator command_begin;
         std::vector<Buffer::iterator> split_points;
-        slot key_slot[3];
+        KeySlotCalc key_slot[3];
         int slot_index;
         bool bad;
     public:
@@ -630,19 +591,16 @@ namespace {
             , bad(false)
         {
             split_points.push_back(arg_begin);
-            key_slot[0] = 0;
-            key_slot[1] = 0;
         }
 
         void on_byte(byte b)
         {
-            this->key_slot[slot_index] = crc16(this->key_slot[slot_index], b);
+            this->key_slot[slot_index].next_byte(b);
         }
 
         void on_element(Buffer::iterator i)
         {
             this->split_points.push_back(i);
-            key_slot[slot_index] = key_slot[slot_index] & (CLUSTER_SLOT_COUNT - 1);
             if (++slot_index == 3) {
                 this->bad = true;
                 this->slot_index = 2;
@@ -656,16 +614,18 @@ namespace {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'rename' command\r\n"));
             }
-            LOG(DEBUG) << "#Rename slots: " << key_slot[0] << " - " << key_slot[1];
-            if (key_slot[0] == key_slot[1]) {
+            slot src_slot = key_slot[0].get_slot();
+            slot dst_slot = key_slot[1].get_slot();
+            LOG(DEBUG) << "#Rename slots: " << src_slot << " - " << dst_slot;
+            if (src_slot == dst_slot) {
                 return util::mkptr(new SingleCommandGroup(
-                    c, Buffer(command_begin, split_points[2]), key_slot[0]));
+                    c, Buffer(command_begin, split_points[2]), src_slot));
             }
             util::sptr<SingleCommandGroup> g(new SingleCommandGroup(c));
             g->command = util::mkptr(new RenameCommand(
                 Buffer(split_points[0], split_points[1]),
                 Buffer(split_points[1], split_points[2]),
-                key_slot[0], key_slot[1], *g));
+                src_slot, dst_slot, *g));
             return std::move(g);
         }
     };
@@ -845,15 +805,77 @@ namespace {
     {
         typedef cerb::msg::MessageSplitterBase<
             Buffer::iterator, ClientCommandSplitter> BaseType;
+
+        std::function<void(ClientCommandSplitter&, byte)> _on_byte;
+        std::function<void(ClientCommandSplitter&, Buffer::iterator)> _on_element;
+
+        void _call_base_on_element(Buffer::iterator it)
+        {
+            BaseType::on_element(it);
+        }
+
+        static void on_raw_element(ClientCommandSplitter& s, Buffer::iterator i)
+        {
+            s.client->push_command(quick_rsp(s.last_command, s.client));
+            s.last_command_begin = i;
+            s._call_base_on_element(i);
+        }
+
+        static void on_command_arr_first_element(ClientCommandSplitter& s, Buffer::iterator it)
+        {
+            s.select_command_parser(it);
+            s._call_base_on_element(it);
+        }
+
+        static void on_command_key(ClientCommandSplitter& s, Buffer::iterator i)
+        {
+            s.last_command_is_bad = false;
+            s._on_byte = [](ClientCommandSplitter&, byte) {};
+            s._on_element = ClientCommandSplitter::base_type_on_element;
+            s._call_base_on_element(i);
+        }
+
+        static void on_command_byte(ClientCommandSplitter& s, byte b)
+        {
+            s.last_command += std::toupper(b);
+        }
+
+        static void on_key_byte(ClientCommandSplitter& s, byte b)
+        {
+            s.slot_calc.next_byte(b);
+        }
+
+        static void special_parser_on_byte(ClientCommandSplitter& s, byte b)
+        {
+            s.special_parser->on_byte(b);
+        }
+
+        static void special_parser_on_element(ClientCommandSplitter& s, Buffer::iterator it)
+        {
+            s.special_parser->on_element(it);
+            s._call_base_on_element(it);
+        }
+
+        static void base_type_on_element(ClientCommandSplitter& s, Buffer::iterator it)
+        {
+            s._call_base_on_element(it);
+        }
     public:
         Buffer::iterator last_command_begin;
 
         std::string last_command;
-        slot last_key_slot;
+        KeySlotCalc slot_calc;
         bool last_command_is_bad;
 
-        std::function<void(byte)> on_byte;
-        std::function<void(Buffer::iterator)> on_element;
+        void on_byte(byte b)
+        {
+            _on_byte(*this, b);
+        }
+
+        void on_element(Buffer::iterator i)
+        {
+            _on_element(*this, i);
+        }
 
         util::sptr<SpecialCommandParser> special_parser;
 
@@ -861,35 +883,25 @@ namespace {
 
         ClientCommandSplitter(Buffer::iterator i, util::sref<Client> cli)
             : BaseType(i)
+            , _on_byte(ClientCommandSplitter::on_command_byte)
+            , _on_element(ClientCommandSplitter::on_raw_element)
             , last_command_begin(i)
-            , last_key_slot(0)
             , last_command_is_bad(false)
-            , on_byte(std::bind(&ClientCommandSplitter::on_command_byte,
-                                this, std::placeholders::_1))
-            , on_element(std::bind(&ClientCommandSplitter::on_raw_element,
-                                   this, std::placeholders::_1))
             , special_parser(nullptr)
             , client(cli)
         {}
 
         ClientCommandSplitter(ClientCommandSplitter&& rhs)
             : BaseType(std::move(rhs))
+            , _on_byte(std::move(rhs._on_byte))
+            , _on_element(std::move(rhs._on_element))
             , last_command_begin(rhs.last_command_begin)
             , last_command(std::move(rhs.last_command))
-            , last_key_slot(rhs.last_key_slot)
+            , slot_calc(std::move(rhs.slot_calc))
             , last_command_is_bad(rhs.last_command_is_bad)
-            , on_byte(std::move(rhs.on_byte))
-            , on_element(std::move(rhs.on_element))
             , special_parser(std::move(rhs.special_parser))
             , client(rhs.client)
         {}
-
-        void on_raw_element(Buffer::iterator i)
-        {
-            client->push_command(quick_rsp(last_command, client));
-            last_command_begin = i;
-            BaseType::on_element(i);
-        }
 
         bool handle_standard_key_command()
         {
@@ -898,16 +910,8 @@ namespace {
                 return false;
             }
             this->last_command_is_bad = true;
-            this->on_byte =
-                [this](byte b)
-                {
-                    this->on_key_byte(b);
-                };
-            this->on_element =
-                [this](Buffer::iterator i)
-                {
-                    this->on_command_key(i);
-                };
+            this->_on_byte = ClientCommandSplitter::on_key_byte;
+            this->_on_element = ClientCommandSplitter::on_command_key;
             return true;
         }
 
@@ -919,75 +923,32 @@ namespace {
             auto sfi = SPECIAL_RSP.find(last_command);
             if (sfi != SPECIAL_RSP.end()) {
                 special_parser = sfi->second(last_command_begin, it);
-                this->on_byte =
-                    [this](byte b)
-                    {
-                        this->special_parser->on_byte(b);
-                    };
-                this->on_element =
-                    [this](Buffer::iterator i)
-                    {
-                        this->special_parser->on_element(i);
-                        BaseType::on_element(i);
-                    };
+                this->_on_byte = ClientCommandSplitter::special_parser_on_byte;
+                this->_on_element = ClientCommandSplitter::special_parser_on_element;
                 return;
             }
             last_command_is_bad = true;
-            this->on_byte = [](byte) {};
-            this->on_element =
-                [this](Buffer::iterator i)
-                {
-                    BaseType::on_element(i);
-                };
-        }
-
-        void on_command_arr_first_element(Buffer::iterator it)
-        {
-            select_command_parser(it);
-            BaseType::on_element(it);
-        }
-
-        void on_command_key(Buffer::iterator i)
-        {
-            this->last_command_is_bad = false;
-            this->on_byte = [](byte) {};
-            this->on_element =
-                [this](Buffer::iterator i)
-                {
-                    BaseType::on_element(i);
-                };
-            BaseType::on_element(i);
-        }
-
-        void on_command_byte(byte b)
-        {
-            last_command += std::toupper(b);
-        }
-
-        void on_key_byte(byte b)
-        {
-            last_key_slot = crc16(last_key_slot, b);
+            this->_on_byte = [](ClientCommandSplitter&, byte) {};
+            this->_on_element = ClientCommandSplitter::base_type_on_element;
         }
 
         void on_arr_end(Buffer::iterator i)
         {
-            this->on_byte = std::bind(&ClientCommandSplitter::on_command_byte,
-                                      this, std::placeholders::_1);
-            this->on_element = std::bind(&ClientCommandSplitter::on_raw_element,
-                                         this, std::placeholders::_1);
+            this->_on_byte = ClientCommandSplitter::on_command_byte;
+            this->_on_element = ClientCommandSplitter::on_raw_element;
             if (last_command_is_bad) {
                 client->push_command(util::mkptr(new DirectCommandGroup(
                     client, "-ERR Unknown command or command key not specified\r\n")));
             } else if (special_parser.nul()) {
                 client->push_command(util::mkptr(new SingleCommandGroup(
-                    client, Buffer(last_command_begin, i), last_key_slot)));
+                    client, Buffer(last_command_begin, i), slot_calc.get_slot())));
             } else {
                 client->push_command(special_parser->spawn_commands(client, i));
                 special_parser.reset();
             }
             last_command.clear();
             last_command_begin = i;
-            last_key_slot = 0;
+            slot_calc.reset();
             last_command_is_bad = false;
             BaseType::on_element(i);
         }
@@ -1001,16 +962,8 @@ namespace {
             if (size == 0) {
                 return;
             }
-            this->on_byte =
-                [this](byte b)
-                {
-                    this->on_command_byte(b);
-                };
-            this->on_element =
-                [this](Buffer::iterator it)
-                {
-                    this->on_command_arr_first_element(it);
-                };
+            this->_on_byte = ClientCommandSplitter::on_command_byte;
+            this->_on_element = ClientCommandSplitter::on_command_arr_first_element;
         }
     };
 

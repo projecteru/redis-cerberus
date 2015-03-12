@@ -14,7 +14,8 @@ all:main.d core_objs utilities libs_3rdparty
 	     -o cerberus
 	@echo "Done"
 
-runtest:core_objs utilities
+runtest:core_objs utilities libs_3rdparty
+	rm -f tmp.*.txt
 	make -f test/Makefile MODE=$(MODE) COMPILER=$(COMPILER) \
 	                      CHECK_MEM=$(CHECK_MEM)
 
