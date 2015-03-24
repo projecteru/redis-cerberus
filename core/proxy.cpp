@@ -154,15 +154,30 @@ void Server::_recv_from()
 void Server::push_client_command(util::sref<Command> cmd)
 {
     _commands.push_back(cmd);
+    cmd->group->client->add_peer(this);
+}
+
+template <typename F>
+static void _erase_command_if(std::vector<util::sref<Command>>& what, F f)
+{
+    what.erase(
+        std::remove_if(
+            what.begin(), what.end(),
+            [&](util::sref<Command> cmd)
+            {
+                return f(cmd);
+            }),
+        what.end());
 }
 
 void Server::pop_client(Client* cli)
 {
-    std::remove_if(this->_commands.begin(), this->_commands.end(),
-                   [&](util::sref<Command>& cmd)
-                   {
-                       return cmd->group->client.is(cli);
-                   });
+    _erase_command_if(
+        this->_commands,
+        [&](util::sref<Command> cmd)
+        {
+            return cmd->group->client.is(cli);
+        });
     std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
                   [&](util::sref<Command>& cmd)
                   {
@@ -174,11 +189,12 @@ void Server::pop_client(Client* cli)
 
 std::vector<util::sref<Command>> Server::deliver_commands()
 {
-    std::remove_if(this->_ready_commands.begin(), this->_ready_commands.end(),
-                   [&](util::sref<Command> cmd)
-                   {
-                       return cmd.nul();
-                   });
+    _erase_command_if(
+        this->_ready_commands,
+        [](util::sref<Command> cmd)
+        {
+            return cmd.nul();
+        });
     _commands.insert(_commands.end(), _ready_commands.begin(),
                      _ready_commands.end());
     return std::move(_commands);
@@ -368,7 +384,7 @@ void Client::_process()
 
         if (g->wait_remote()) {
             ++_awaiting_count;
-            g->select_remote(this->_peers, this->_proxy);
+            g->select_remote(this->_proxy);
         }
         _awaiting_groups.push_back(std::move(g));
     }
@@ -377,17 +393,12 @@ void Client::_process()
     if (0 < _awaiting_count) {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-        std::for_each(this->_peers.begin(), this->_peers.end(),
-                      [&](Server* svr)
-                      {
-                           ev.data.ptr = svr;
-                           if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD,
-                                         svr->fd, &ev) == -1)
-                           {
-                               throw SystemError(
-                                   "epoll_ctl+modio Client::_process", errno);
-                           }
-                      });
+        for (Server* svr: this->_peers) {
+            ev.data.ptr = svr;
+            if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, svr->fd, &ev) == -1) {
+                throw SystemError("epoll_ctl+modio Client::_process", errno);
+            }
+        }
     } else {
         _response_ready();
     }
@@ -428,7 +439,7 @@ void Client::push_command(util::sptr<CommandGroup> g)
 
 Proxy::Proxy(util::Address const& remote)
     : _clients_count(0)
-    , _server_map([&](std::string const& host, int port)
+    , _server_map([this](std::string const& host, int port)
                   {
                       return new Server(host, port, this);
                   })
@@ -510,7 +521,6 @@ void Proxy::_set_slot_map(std::map<slot, util::Address> map)
                       if (s == nullptr) {
                           return;
                       }
-                      cmd->group->client->add_peer(s);
                       svrs.insert(s);
                   });
 
@@ -616,8 +626,8 @@ void Proxy::_loop()
         try {
             conn->triggered(events[i].events);
         } catch (IOErrorBase& e) {
-            LOG(ERROR) << "IOError: " << e.what();
-            LOG(ERROR) << "Close connection to " << conn->fd << " in " << conn;
+            LOG(ERROR) << "IOError: " << e.what() << " :: "
+                       << "Close connection to " << conn->fd << " in " << conn;
             conn->close();
             closed_conns.insert(conn);
         }
@@ -672,12 +682,12 @@ void Proxy::accept_from(int listen_fd)
 
 void Proxy::pop_client(Client* cli)
 {
-    std::remove_if(this->_retrying_commands.begin(),
-                   this->_retrying_commands.end(),
-                   [&](util::sref<Command> cmd)
-                   {
-                       return cmd->group->client.is(cli);
-                   });
+    _erase_command_if(
+        this->_retrying_commands,
+        [&](util::sref<Command> cmd)
+        {
+            return cmd->group->client.is(cli);
+        });
     --this->_clients_count;
 }
 

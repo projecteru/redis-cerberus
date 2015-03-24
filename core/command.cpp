@@ -107,7 +107,7 @@ namespace {
             return false;
         }
 
-        void select_remote(std::set<Server*>&, Proxy*) {}
+        void select_remote(Proxy*) {}
 
         void append_buffer_to(std::vector<util::sref<Buffer>>& b)
         {
@@ -180,12 +180,9 @@ namespace {
             return command->buffer.size();
         }
 
-        void select_remote(std::set<Server*>& servers, Proxy* proxy)
+        void select_remote(Proxy* proxy)
         {
-            Server* s = command->select_server(proxy);
-            if (s != nullptr) {
-                servers.insert(s);
-            }
+            command->select_server(proxy);
         }
     };
 
@@ -242,13 +239,10 @@ namespace {
             return i;
         }
 
-        void select_remote(std::set<Server*>& servers, Proxy* proxy)
+        void select_remote(Proxy* proxy)
         {
             for (auto& c: this->commands) {
-                Server* s = c->select_server(proxy);
-                if (s != nullptr) {
-                    servers.insert(s);
-                }
+                c->select_server(proxy);
             }
         }
     };
@@ -276,7 +270,7 @@ namespace {
             return 0;
         }
 
-        void select_remote(std::set<Server*>&, Proxy*) {}
+        void select_remote(Proxy*) {}
         void append_buffer_to(std::vector<util::sref<Buffer>>&) {}
         void command_responsed() {}
     };
