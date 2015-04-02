@@ -60,6 +60,11 @@ namespace {
 
         std::string _last_error;
 
+        void _base_on_element(Buffer::iterator i)
+        {
+            BaseType::on_element(i);
+        }
+
         void _push_retry_rsp()
         {
             responses.push_back(util::mkptr(new RetryMovedAskResponse));
@@ -86,31 +91,34 @@ namespace {
             _push_normal_rsp(_split_points.back(), i, !_last_error.empty());
         }
 
-        void _on_element(Buffer::iterator i)
+        static void _default_on_element(ServerResponseSplitter* me, Buffer::iterator i)
         {
-            _push_rsp(i);
-            _last_error.clear();
-            BaseType::on_element(i);
+            me->_push_rsp(i);
+            me->_last_error.clear();
+            me->_base_on_element(i);
         }
+
+        std::function<void(ServerResponseSplitter*, Buffer::iterator)> _on_element;
     public:
         std::vector<util::sptr<Response>> responses;
-        std::function<void(Buffer::iterator)> on_element;
 
         void on_byte(byte) {}
 
+        void on_element(Buffer::iterator i)
+        {
+            this->_on_element(this, i);
+        }
+
         explicit ServerResponseSplitter(Buffer::iterator i)
             : BaseType(i)
-            , on_element([&](Buffer::iterator i)
-                         {
-                             this->_on_element(i);
-                         })
+            , _on_element(_default_on_element)
         {}
 
         Buffer::iterator on_err(Buffer::iterator begin, Buffer::iterator end)
         {
             auto next = msg::parse_simple_str(
                 begin, end,
-                [&](byte b)
+                [this](byte b)
                 {
                     this->_last_error += b;
                 });
@@ -123,20 +131,18 @@ namespace {
             _push_normal_rsp(_split_points.back(), next, false);
             BaseType::on_element(next);
             if (this->_nested_array_element_count.size() == 0) {
-                this->on_element = [&](Buffer::iterator i)
-                                   {
-                                       this->_on_element(i);
-                                   };
+                this->_on_element = _default_on_element;
             }
         }
 
         void on_arr(cerb::rint size, Buffer::iterator next)
         {
             if (size != 0) {
-                this->on_element = [&](Buffer::iterator i)
-                                   {
-                                       BaseType::on_element(i);
-                                   };
+                this->_on_element =
+                    [](ServerResponseSplitter* me, Buffer::iterator i)
+                    {
+                        me->_base_on_element(i);
+                    };
             }
             BaseType::on_arr(size, next);
         }

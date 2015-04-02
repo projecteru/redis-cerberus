@@ -701,6 +701,60 @@ namespace {
         }
     };
 
+    class KeysInSlotParser
+        : public SpecialCommandParser
+    {
+        Buffer::iterator _arg_start;
+        int _arg_count;
+        int _slot;
+        bool _error;
+
+        std::function<void(KeysInSlotParser*, byte)> _on_byte;
+
+        static void _calc_slot(KeysInSlotParser* me, byte b)
+        {
+            if (b >= '0' && b <= '9') {
+                me->_slot = me->_slot * 10 + (b - '0');
+            } else {
+                me->_on_byte = KeysInSlotParser::_skip_byte;
+                me->_error = true;
+            }
+        }
+
+        static void _skip_byte(KeysInSlotParser*, byte) {}
+    public:
+        void on_byte(byte b)
+        {
+            this->_on_byte(this, b);
+        }
+
+        void on_element(Buffer::iterator)
+        {
+            ++_arg_count;
+            this->_on_byte = KeysInSlotParser::_skip_byte;
+        }
+
+        explicit KeysInSlotParser(Buffer::iterator arg_start)
+            : _arg_start(arg_start)
+            , _arg_count(0)
+            , _slot(0)
+            , _error(false)
+            , _on_byte(KeysInSlotParser::_calc_slot)
+        {}
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator end)
+        {
+            if (_arg_count != 2 || _error) {
+                return util::mkptr(new DirectCommandGroup(
+                    c, "-ERR wrong arguments for 'keysinslot' command\r\n"));
+            }
+            Buffer buffer(Buffer::from_string("*4\r\n$7\r\nCLUSTER\r\n$13\r\nGETKEYSINSLOT\r\n"));
+            buffer.append_from(_arg_start, end);
+            return util::mkptr(new SingleCommandGroup(c, std::move(buffer), _slot));
+        }
+    };
+
     std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
         Buffer::iterator, Buffer::iterator)>> const SPECIAL_RSP(
     {
@@ -749,6 +803,11 @@ namespace {
             [](Buffer::iterator command_begin, Buffer::iterator)
             {
                 return util::mkptr(new PublishCommandParser(command_begin));
+            }},
+        {"KEYSINSLOT",
+            [](Buffer::iterator, Buffer::iterator arg_start)
+            {
+                return util::mkptr(new KeysInSlotParser(arg_start));
             }},
     });
 
