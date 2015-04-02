@@ -61,6 +61,7 @@ Extra Commands
 ---
 
 * `PROXY`: shows proxy information, including threads count, clients counts
+* `KEYSINSLOT slot count`: list keys in a specified slot, same as `CLUSTER GETKEYSINSLOT slot count`
 
 Not Implemented
 ---
