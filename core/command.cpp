@@ -745,7 +745,7 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (_arg_count != 2 || _error) {
+            if (_arg_count != 2 || _error || _slot >= CLUSTER_SLOT_COUNT) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong arguments for 'keysinslot' command\r\n"));
             }
