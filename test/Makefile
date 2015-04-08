@@ -12,7 +12,7 @@ endif
 test:$(TESTDIR)/test.out
 	$(VALGRIND) $(TESTDIR)/test.out
 
-$(TESTDIR)/test.out:message.dt response.dt buffer.dt slot_calc.dt
+$(TESTDIR)/test.out:message.dt response.dt buffer.dt slot_calc.dt slot_map.dt
 	$(LINK) $(TESTDIR)/*.o utils/*.o core/*.o \
 	        $(TEST_LIBS) \
 	     -o $(TESTDIR)/test.out

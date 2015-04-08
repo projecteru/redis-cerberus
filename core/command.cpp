@@ -5,15 +5,21 @@
 #include "command.hpp"
 #include "exceptions.hpp"
 #include "proxy.hpp"
+#include "client.hpp"
+#include "server.hpp"
 #include "subscription.hpp"
 #include "stats.hpp"
 #include "slot_calc.hpp"
+#include "globals.hpp"
 #include "utils/logging.hpp"
 #include "utils/random.hpp"
 
 using namespace cerb;
 
 namespace {
+
+    std::string const RSP_OK_STR("+OK\r\n");
+    Buffer RSP_OK(Buffer::from_string(RSP_OK_STR));
 
     Server* select_server_for(Proxy* proxy, Command* cmd, slot key_slot)
     {
@@ -281,9 +287,22 @@ namespace {
         return '+' + s + "\r\n";
     }
 
+    void notify_each_thread_update_slot_map()
+    {
+        for (auto& t: cerb_global::all_threads) {
+            t.get_proxy()->update_slot_map();
+        }
+    }
+
     std::map<std::string, std::function<std::string()>> const QUICK_RSP({
-        {"PING", [](){return "+PONG\r\n";}},
-        {"PROXY", [](){return stats_string();}},
+        {"PING", []() {return "+PONG\r\n";}},
+        {"PROXY", []() {return stats_string();}},
+        {"UPDATESLOTMAP",
+            []()
+            {
+                notify_each_thread_update_slot_map();
+                return RSP_OK_STR;
+            }},
     });
 
     util::sptr<CommandGroup> quick_rsp(std::string const& command, util::sref<Client> c)
@@ -349,12 +368,29 @@ namespace {
         : public SpecialCommandParser
     {
     public:
-        ProxyStatsCommandParser() {}
+        ProxyStatsCommandParser() = default;
 
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator)
         {
             return util::mkptr(new DirectCommandGroup(c, stats_string()));
+        }
+
+        void on_byte(byte) {}
+        void on_element(Buffer::iterator) {}
+    };
+
+    class UpdateSlotMapCommandParser
+        : public SpecialCommandParser
+    {
+    public:
+        UpdateSlotMapCommandParser() = default;
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator)
+        {
+            notify_each_thread_update_slot_map();
+            return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
         }
 
         void on_byte(byte) {}
@@ -439,7 +475,6 @@ namespace {
         class MSetCommandGroup
             : public MultipleCommandsGroup
         {
-            static Buffer R;
         public:
             explicit MSetCommandGroup(util::sref<Client> c)
                 : MultipleCommandsGroup(c)
@@ -447,12 +482,12 @@ namespace {
 
             void append_buffer_to(std::vector<util::sref<Buffer>>& b)
             {
-                b.push_back(util::mkref(R));
+                b.push_back(util::mkref(RSP_OK));
             }
 
             int total_buffer_size() const
             {
-                return R.size();
+                return RSP_OK.size();
             }
         };
 
@@ -501,7 +536,6 @@ namespace {
             return std::move(g);
         }
     };
-    Buffer MSetCommandParser::MSetCommandGroup::R(Buffer::from_string("+OK\r\n"));
 
     class RenameCommandParser
         : public SpecialCommandParser
@@ -639,8 +673,11 @@ namespace {
 
             void deliver_client(Proxy* p)
             {
-                new Subscription(p, this->client->fd, p->random_addr(),
-                                 std::move(buffer));
+                Server* s = p->random_addr();
+                if (s == nullptr) {
+                    return this->client->close();
+                }
+                new Subscription(p, this->client->fd, s, std::move(buffer));
                 LOG(DEBUG) << "Deliver " << client.id().str() << "'s FD "
                            << this->client->fd << " as subscription client";
                 this->client->fd = -1;
@@ -756,7 +793,7 @@ namespace {
     };
 
     std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
-        Buffer::iterator, Buffer::iterator)>> const SPECIAL_RSP(
+        Buffer::iterator, Buffer::iterator)>> SPECIAL_RSP(
     {
         {"PING",
             [](Buffer::iterator, Buffer::iterator arg_start)
@@ -768,26 +805,15 @@ namespace {
             {
                 return util::mkptr(new ProxyStatsCommandParser);
             }},
-        {"DEL",
-            [](Buffer::iterator, Buffer::iterator arg_start)
+        {"UPDATESLOTMAP",
+            [](Buffer::iterator, Buffer::iterator)
             {
-                return util::mkptr(new DelCommandParser(arg_start));
+                return util::mkptr(new UpdateSlotMapCommandParser);
             }},
         {"MGET",
             [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new MGetCommandParser(arg_start));
-            }},
-        {"MSET",
-            [](Buffer::iterator, Buffer::iterator arg_start)
-            {
-                return util::mkptr(new MSetCommandParser(arg_start));
-            }},
-        {"RENAME",
-            [](Buffer::iterator command_begin, Buffer::iterator arg_start)
-            {
-                return util::mkptr(new RenameCommandParser(
-                    command_begin, arg_start));
             }},
         {"SUBSCRIBE",
             [](Buffer::iterator command_begin, Buffer::iterator)
@@ -799,57 +825,18 @@ namespace {
             {
                 return util::mkptr(new SubscribeCommandParser(command_begin));
             }},
-        {"PUBLISH",
-            [](Buffer::iterator command_begin, Buffer::iterator)
-            {
-                return util::mkptr(new PublishCommandParser(command_begin));
-            }},
-        {"KEYSINSLOT",
-            [](Buffer::iterator, Buffer::iterator arg_start)
-            {
-                return util::mkptr(new KeysInSlotParser(arg_start));
-            }},
     });
-
-    /*
-    std::set<std::string> UNSUPPORTED_RSP({
-        "KEYS", "MIGRATE", "MOVE", "OBJECT", "RANDOMKEY",
-        "RENAMENX", "SCAN", "BITOP",
-        "BLPOP", "BRPOP", "BRPOPLPUSH", "RPOPLPUSH",
-        "SINTERSTORE", "SDIFFSTORE", "SINTER", "SMOVE", "SUNIONSTORE",
-        "ZINTERSTORE", "ZUNIONSTORE",
-        "PFADD", "PFCOUNT", "PFMERGE",
-        "PUBSUB", "PUNSUBSCRIBE", "UNSUBSCRIBE",
-        "EVAL", "EVALSHA", "SCRIPT",
-        "WATCH", "UNWATCH", "EXEC", "DISCARD", "MULTI",
-        "SELECT", "QUIT", "ECHO", "AUTH",
-        "CLUSTER", "BGREWRITEAOF", "BGSAVE", "CLIENT", "COMMAND", "CONFIG",
-        "DBSIZE", "DEBUG", "FLUSHALL", "FLUSHDB", "INFO", "LASTSAVE", "MONITOR",
-        "ROLE", "SAVE", "SHUTDOWN", "SLAVEOF", "SLOWLOG", "SYNC", "TIME",
-    });
-    */
 
     std::set<std::string> STD_COMMANDS({
-        "DUMP", "EXISTS", "EXPIRE", "EXPIREAT", "TTL", "PEXPIRE", "PEXPIREAT",
-        "PTTL", "PERSIST", "RESTORE", "TYPE",
+        "DUMP", "EXISTS", "TTL", "PTTL", "TYPE",
+        "GET", "BITCOUNT", "GETBIT", "GETRANGE", "STRLEN",
+        "HGET", "HGETALL", "HKEYS", "HVALS", "HLEN", "HEXISTS", "HMGET", "HSCAN",
+        "LINDEX", "LLEN", "LRANGE",
+        "SCARD", "SISMEMBER", "SMEMBERS", "SSCAN",
 
-        "GET", "SET", "SETNX", "GETSET", "SETEX", "PSETEX", "SETBIT", "APPEND",
-        "BITCOUNT", "GETBIT", "GETRANGE", "SETRANGE", "STRLEN", "INCR", "DECR",
-        "INCRBY", "DECRBY", "INCRBYFLOAT",
-
-        "HGET", "HGETALL", "HSET", "HSETNX", "HDEL", "HKEYS", "HVALS", "HLEN",
-        "HEXISTS", "HINCRBY", "HINCRBYFLOAT", "HKEYS", "HMGET", "HMSET", "HSCAN",
-
-        "LINDEX", "LINSERT", "LLEN", "LPOP", "RPOP", "LPUSH", "LPUSHX",
-        "RPUSH", "RPUSHX", "LRANGE", "LREM", "LSET", "LTRIM", "SORT",
-
-        "SCARD", "SADD", "SISMEMBER", "SMEMBERS", "SPOP", "SRANDMEMBER",
-        "SREM", "SSCAN",
-
-        "ZCARD", "ZADD", "ZREM", "ZSCAN", "ZCOUNT", "ZINCRBY", "ZLEXCOUNT",
-        "ZRANGE", "ZRANGEBYLEX", "ZREVRANGEBYLEX", "ZRANGEBYSCORE", "ZRANK",
-        "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREVRANGE",
-        "ZREVRANGEBYSCORE", "ZREVRANK", "ZSCORE",
+        "ZCARD", "ZSCAN", "ZCOUNT", "ZLEXCOUNT", "ZRANGE",
+        "ZRANGEBYLEX", "ZREVRANGEBYLEX", "ZRANGEBYSCORE", "ZRANK",
+        "ZREVRANGE", "ZREVRANGEBYSCORE", "ZREVRANK", "ZSCORE",
     });
 
     class ClientCommandSplitter
@@ -1037,5 +1024,60 @@ void cerb::split_client_command(Buffer& buffer, util::sref<Client> cli)
         buffer.clear();
     } else {
         buffer.truncate_from_begin(c.interrupt_point());
+    }
+}
+
+void Command::allow_write_commands()
+{
+    static std::set<std::string> const WRITE_COMMANDS({
+        "EXPIRE", "EXPIREAT", "TTL", "PEXPIRE", "PEXPIREAT", "PERSIST", "RESTORE",
+
+        "SET", "SETNX", "GETSET", "SETEX", "PSETEX", "SETBIT", "APPEND",
+        "SETRANGE", "INCR", "DECR", "INCRBY", "DECRBY", "INCRBYFLOAT",
+
+        "HSET", "HSETNX", "HDEL", "HINCRBY", "HINCRBYFLOAT", "HMSET",
+
+        "LINSERT", "LPOP", "RPOP", "LPUSH", "LPUSHX",
+        "RPUSH", "RPUSHX", "LREM", "LSET", "LTRIM", "SORT",
+
+        "SADD", "SPOP", "SREM",
+
+        "ZADD", "ZREM", "ZINCRBY", "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE",
+    });
+    for (std::string const& c: WRITE_COMMANDS) {
+        STD_COMMANDS.insert(c);
+    }
+    static std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
+        Buffer::iterator, Buffer::iterator)>> const SPECIAL_WRITE_COMMAND(
+    {
+        {"DEL",
+            [](Buffer::iterator, Buffer::iterator arg_start)
+            {
+                return util::mkptr(new DelCommandParser(arg_start));
+            }},
+        {"MSET",
+            [](Buffer::iterator, Buffer::iterator arg_start)
+            {
+                return util::mkptr(new MSetCommandParser(arg_start));
+            }},
+        {"RENAME",
+            [](Buffer::iterator command_begin, Buffer::iterator arg_start)
+            {
+                return util::mkptr(new RenameCommandParser(
+                    command_begin, arg_start));
+            }},
+        {"PUBLISH",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new PublishCommandParser(command_begin));
+            }},
+        {"KEYSINSLOT",
+            [](Buffer::iterator, Buffer::iterator arg_start)
+            {
+                return util::mkptr(new KeysInSlotParser(arg_start));
+            }},
+    });
+    for (auto const& c: SPECIAL_WRITE_COMMAND) {
+        SPECIAL_RSP.insert(c);
     }
 }

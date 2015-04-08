@@ -37,6 +37,8 @@ namespace cerb {
         {}
 
         Command(Command const&) = delete;
+
+        static void allow_write_commands();
     };
 
     class CommandGroup {

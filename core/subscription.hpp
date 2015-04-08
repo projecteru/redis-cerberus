@@ -5,6 +5,8 @@
 
 namespace cerb {
 
+    class Server;
+
     class Subscription
         : public ProxyConnection
     {
@@ -16,17 +18,18 @@ namespace cerb {
             ServerConn(util::Address const& addr, Buffer subs_cmd,
                        Subscription* peer);
 
-            void triggered(int events);
-            void event_handled(std::set<Connection*>& active_conns);
+            void on_events(int events);
+            void after_events(std::set<Connection*>& active_conns);
         };
 
         ServerConn _server;
+        Server* const _peer;
     public:
-        Subscription(Proxy* proxy, int clientfd, util::Address const& addr,
-                     Buffer subs_cmd);
+        Subscription(Proxy* proxy, int clientfd, Server* peer, Buffer subs_cmd);
+        ~Subscription();
 
-        void triggered(int events);
-        void event_handled(std::set<Connection*>& active_conns);
+        void on_events(int events);
+        void after_events(std::set<Connection*>& active_conns);
     };
 
 }

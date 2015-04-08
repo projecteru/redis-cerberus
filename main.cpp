@@ -6,6 +6,8 @@
 #include <stdexcept>
 
 #include "core/globals.hpp"
+#include "core/command.hpp"
+#include "core/server.hpp"
 #include "utils/logging.hpp"
 #include "utils/string.h"
 #include "backtracpp/sig-handler.h"
@@ -66,6 +68,16 @@ namespace {
 
     void run(Configuration const& config)
     {
+        if (config.get("read-slave", "") == "1") {
+            LOG(INFO) << "Readonly proxy, use slaves for reading if possible";
+            cerb::Server::send_readonly_for_each_conn();
+            cerb::stats_set_read_slave();
+            cerb::SlotMap::select_slave_if_possible();
+        } else {
+            LOG(INFO) << "Writable proxy";
+            cerb::Command::allow_write_commands();
+        }
+
         int bind_port = util::atoi(config.get("bind"));
         int thread_count = util::atoi(config.get("thread", "1"));
         if (thread_count <= 0) {
@@ -76,29 +88,23 @@ namespace {
             cerb_global::all_threads.push_back(
                 cerb::ListenThread(bind_port, config.get("node")));
         }
-        std::for_each(cerb_global::all_threads.begin(),
-                      cerb_global::all_threads.end(),
-                      [](cerb::ListenThread& t)
-                      {
-                          t.run();
-                      });
+        for (auto& t: cerb_global::all_threads) {
+            t.run();
+        }
         LOG(INFO) << "Started; listen to port " << bind_port
                   << " thread=" << thread_count;
-        std::for_each(cerb_global::all_threads.begin(),
-                      cerb_global::all_threads.end(),
-                      [](cerb::ListenThread& t)
-                      {
-                          t.join();
-                      });
+        for (auto& t: cerb_global::all_threads) {
+            t.join();
+        }
     }
 
 }
 
 int main(int argc, char* argv[])
 {
+    std::cerr << "Cerberus version " VERSION
+                 " Copyright (c) HunanTV Platform developers" << std::endl;
     if (argc == 1) {
-        std::cerr << "Cerberus version " VERSION
-                     " Copyright (c) HunanTV Platform developers" << std::endl;
         std::cerr << "Usage:" << std::endl;
         std::cerr << "    cerberus CONFIG_FILE" << std::endl;
         return 1;

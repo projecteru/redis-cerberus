@@ -33,6 +33,11 @@ namespace cerb {
             return *_proxy;
         }
 
+        util::sref<Proxy> get_proxy()
+        {
+            return *_proxy;
+        }
+
         msize_t buffer_allocated() const
         {
             return *_mem_buffer_stat;

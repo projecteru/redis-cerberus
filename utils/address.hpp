@@ -5,8 +5,7 @@
 
 namespace util {
 
-    class Address {
-    public:
+    struct Address {
         std::string host;
         int port;
 
@@ -26,6 +25,13 @@ namespace util {
         {}
 
         static Address from_host_port(std::string const& addr);
+
+        Address& operator=(Address const& rhs)
+        {
+            this->host = rhs.host;
+            this->port = rhs.port;
+            return *this;
+        }
 
         bool operator==(Address const& rhs) const
         {

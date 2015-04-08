@@ -8,6 +8,7 @@
 namespace cerb {
 
     std::string stats_all();
+    void stats_set_read_slave();
 
     class BufferStatAllocator
         : public std::allocator<byte>

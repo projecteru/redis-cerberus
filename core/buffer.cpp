@@ -50,7 +50,7 @@ int Buffer::read(int fd)
     return n;
 }
 
-int Buffer::write(int fd)
+int Buffer::write(int fd) const
 {
     size_type n = 0;
     while (n < _buffer.size()) {

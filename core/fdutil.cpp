@@ -11,9 +11,20 @@ using namespace cerb;
 
 FDWrapper::~FDWrapper()
 {
-    if (fd != -1) {
+    this->close();
+}
+
+bool FDWrapper::closed() const
+{
+    return this->fd == -1;
+}
+
+void FDWrapper::close()
+{
+    if (!this->closed()) {
         LOG(DEBUG) << "*close " << fd;
-        close(fd);
+        ::close(this->fd);
+        this->fd = -1;
     }
 }
 
@@ -48,7 +59,6 @@ int cerb::new_stream_socket()
 
 void cerb::connect_fd(std::string const& host, int port, int fd)
 {
-    LOG(DEBUG) << "Connecting to " << host << ':' << port << " for " << fd;
     set_tcpnodelay(fd);
 
     struct sockaddr_in serv_addr;

@@ -74,7 +74,7 @@ namespace cerb {
         }
 
         int read(int fd);
-        int write(int fd);
+        int write(int fd) const;
         void truncate_from_begin(iterator i);
         void buffer_ready(std::vector<struct iovec>& iov);
         void copy_from(const_iterator first, const_iterator last);

@@ -1,211 +1,37 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/epoll.h>
-#include <algorithm>
 
 #include "proxy.hpp"
+#include "server.hpp"
+#include "client.hpp"
 #include "response.hpp"
 #include "exceptions.hpp"
 #include "utils/string.h"
+#include "utils/alg.hpp"
 #include "utils/logging.hpp"
 
 using namespace cerb;
 
 static int const MAX_EVENTS = 1024;
 
-void ProxyConnection::event_handled(std::set<Connection*>&)
-{
-    if (this->_closed) {
-        delete this;
-    }
-}
-
-void ProxyConnection::close()
-{
-    this->_closed = true;
-}
-
-void Acceptor::triggered(int)
+void Acceptor::on_events(int)
 {
     _proxy->accept_from(this->fd);
 }
 
-void Acceptor::close()
+void Acceptor::on_error()
 {
     LOG(ERROR) << "Accept error.";
 }
 
-Server::Server(std::string const& host, int port, Proxy* p)
-    : ProxyConnection(new_stream_socket())
-    , _proxy(p)
-{
-    set_nonblocking(fd);
-    connect_fd(host, port, this->fd);
-
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    ev.data.ptr = this;
-    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
-        throw SystemError("epoll_ctl+add", errno);
-    }
-}
-
-void Server::triggered(int events)
-{
-    if (events & EPOLLRDHUP) {
-        return this->close();
-    }
-    if (events & EPOLLIN) {
-        try {
-            this->_recv_from();
-        } catch (BadRedisMessage& e) {
-            LOG(FATAL) << "Receive bad message from server " << this->fd
-                       << " because: " << e.what()
-                       << " dump buffer (before close): "
-                       << this->_buffer.to_string();
-            exit(1);
-        }
-    }
-    if (events & EPOLLOUT) {
-        this->_send_to();
-    }
-}
-
-void Server::event_handled(std::set<Connection*>&)
-{
-    if (this->_closed) {
-        LOG(ERROR) << "Server closed connection " << this->fd
-                   << ". Notify proxy to update slot map";
-        ::close(this->fd);
-        this->fd = -1;
-        _proxy->server_closed();
-    }
-}
-
-void Server::_send_to()
-{
-    if (this->_commands.empty()) {
-        return;
-    }
-    if (!this->_ready_commands.empty()) {
-        LOG(DEBUG) << "+busy";
-        return;
-    }
-
-    std::vector<util::sref<Buffer>> buffer_arr;
-    this->_ready_commands = std::move(this->_commands);
-    buffer_arr.reserve(this->_ready_commands.size());
-    for (auto const& c: this->_ready_commands) {
-        buffer_arr.push_back(util::mkref(c->buffer));
-    }
-    Buffer::writev(this->fd, buffer_arr);
-
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLET;
-    ev.data.ptr = this;
-    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        throw SystemError("epoll_ctl+modi", errno);
-    }
-}
-
-void Server::_recv_from()
-{
-    int n = this->_buffer.read(this->fd);
-    if (n == 0) {
-        LOG(INFO) << "Server hang up: " << this->fd;
-        throw ConnectionHungUp();
-    }
-    LOG(DEBUG) << "+read from " << this->fd
-               << " buffer size " << this->_buffer.size()
-               << ": " << this->_buffer.to_string();
-    auto responses(split_server_response(this->_buffer));
-    if (responses.size() > this->_ready_commands.size()) {
-        LOG(ERROR) << "+Error on split, expected size: " << this->_ready_commands.size()
-                   << " actual: " << responses.size() << " dump buffer:";
-        std::for_each(responses.begin(), responses.end(),
-                      [](util::sptr<Response> const& rsp)
-                      {
-                          LOG(ERROR) << "::: " << rsp->dump_buffer().to_string();
-                      });
-        LOG(ERROR) << "Rest buffer: " << this->_buffer.to_string();
-        LOG(FATAL) << "Exit";
-        exit(1);
-    }
-    LOG(DEBUG) << "+responses size: " << responses.size();
-    LOG(DEBUG) << "+rest buffer: " << this->_buffer.size() << ": " << this->_buffer.to_string();
-    auto client_it = this->_ready_commands.begin();
-    std::for_each(responses.begin(), responses.end(),
-                  [&](util::sptr<Response>& rsp)
-                  {
-                      util::sref<Command> c = *client_it++;
-                      if (c.not_nul()) {
-                          rsp->rsp_to(c, util::mkref(*this->_proxy));
-                      }
-                  });
-    this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    ev.data.ptr = this;
-    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        throw SystemError("epoll_ctl+modio Server::_recv_from", errno);
-    }
-}
-
-void Server::push_client_command(util::sref<Command> cmd)
-{
-    _commands.push_back(cmd);
-    cmd->group->client->add_peer(this);
-}
-
-template <typename F>
-static void _erase_command_if(std::vector<util::sref<Command>>& what, F f)
-{
-    what.erase(
-        std::remove_if(
-            what.begin(), what.end(),
-            [&](util::sref<Command> cmd)
-            {
-                return f(cmd);
-            }),
-        what.end());
-}
-
-void Server::pop_client(Client* cli)
-{
-    _erase_command_if(
-        this->_commands,
-        [&](util::sref<Command> cmd)
-        {
-            return cmd->group->client.is(cli);
-        });
-    std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sref<Command>& cmd)
-                  {
-                      if (cmd.not_nul() && cmd->group->client.is(cli)) {
-                          cmd.reset();
-                      }
-                  });
-}
-
-std::vector<util::sref<Command>> Server::deliver_commands()
-{
-    _erase_command_if(
-        this->_ready_commands,
-        [](util::sref<Command> cmd)
-        {
-            return cmd.nul();
-        });
-    _commands.insert(_commands.end(), _ready_commands.begin(),
-                     _ready_commands.end());
-    return std::move(_commands);
-}
-
-SlotsMapUpdater::SlotsMapUpdater(util::Address const& addr, Proxy* p)
+SlotsMapUpdater::SlotsMapUpdater(util::Address a, Proxy* p)
     : Connection(new_stream_socket())
     , _proxy(p)
+    , addr(std::move(a))
 {
     set_nonblocking(fd);
-    connect_fd(addr.host, addr.port, this->fd);
+    connect_fd(this->addr.host, this->addr.port, this->fd);
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
@@ -245,11 +71,11 @@ void SlotsMapUpdater::_recv_rsp()
                               util::str(int(rsp.size())));
     }
     this->_updated_map = std::move(
-        parse_slot_map(rsp[0]->dump_buffer().to_string()));
+        parse_slot_map(rsp[0]->dump_buffer().to_string(), this->addr.host));
     _proxy->notify_slot_map_updated();
 }
 
-void SlotsMapUpdater::triggered(int events)
+void SlotsMapUpdater::on_events(int events)
 {
     if (events & EPOLLRDHUP) {
         LOG(ERROR) << "Failed to retrieve slot map from " << this->fd
@@ -274,179 +100,18 @@ void SlotsMapUpdater::triggered(int events)
     }
 }
 
-void SlotsMapUpdater::close()
+void SlotsMapUpdater::on_error()
 {
     epoll_ctl(_proxy->epfd, EPOLL_CTL_DEL, this->fd, NULL);
     _proxy->notify_slot_map_updated();
 }
 
-Client::~Client()
-{
-    std::for_each(this->_peers.begin(), this->_peers.end(),
-                  [&](Server* svr)
-                  {
-                      svr->pop_client(this);
-                  });
-    _proxy->pop_client(this);
-}
-
-void Client::triggered(int events)
-{
-    if (events & EPOLLRDHUP) {
-        return this->close();
-    }
-    try {
-        if (events & EPOLLIN) {
-            this->_read_request();
-        }
-        if (events & EPOLLOUT) {
-            this->_write_response();
-        }
-    } catch (BadRedisMessage& e) {
-        LOG(ERROR) << "Receive bad message from client " << this->fd
-                   << " because: " << e.what()
-                   << " dump buffer (before close): "
-                   << this->_buffer.to_string();
-        return this->close();
-    }
-}
-
-void Client::_write_response()
-{
-    if (this->_awaiting_groups.empty() || _awaiting_count != 0) {
-        return;
-    }
-    if (!this->_ready_groups.empty()) {
-        LOG(DEBUG) << "-busy";
-        return;
-    }
-
-    std::vector<util::sref<Buffer>> buffer_arr;
-    this->_ready_groups = std::move(this->_awaiting_groups);
-    for (auto const& g: this->_ready_groups) {
-        g->append_buffer_to(buffer_arr);
-    }
-    Buffer::writev(this->fd, buffer_arr);
-    this->_ready_groups.clear();
-    this->_peers.clear();
-
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLET;
-    ev.data.ptr = this;
-    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        throw SystemError("epoll_ctl-modi", errno);
-    }
-
-    if (!this->_parsed_groups.empty()) {
-        _process();
-    }
-}
-
-void Client::_read_request()
-{
-    int n = this->_buffer.read(this->fd);
-    LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size() << " read returns " << n;
-    if (n == 0) {
-        return this->close();
-    }
-
-    split_client_command(this->_buffer, util::mkref(*this));
-
-    if (_awaiting_groups.empty() && _ready_groups.empty()) {
-        _process();
-    }
-}
-
-void Client::reactivate(util::sref<Command> cmd)
-{
-    Server* s = cmd->select_server(this->_proxy);
-    if (s == nullptr) {
-        return;
-    }
-    LOG(DEBUG) << "reactivated " << s->fd;
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    ev.data.ptr = s;
-    if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, s->fd, &ev) == -1) {
-        throw SystemError("epoll_ctl+modio Client::reactivate", errno);
-    }
-}
-
-void Client::_process()
-{
-    for (auto& g: this->_parsed_groups) {
-        if (g->long_connection()) {
-            epoll_ctl(this->_proxy->epfd, EPOLL_CTL_DEL, this->fd, nullptr);
-            g->deliver_client(this->_proxy);
-            LOG(DEBUG) << "Convert self to long connection, delete " << this;
-            return this->close();
-        }
-
-        if (g->wait_remote()) {
-            ++_awaiting_count;
-            g->select_remote(this->_proxy);
-        }
-        _awaiting_groups.push_back(std::move(g));
-    }
-    this->_parsed_groups.clear();
-
-    if (0 < _awaiting_count) {
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-        for (Server* svr: this->_peers) {
-            ev.data.ptr = svr;
-            if (epoll_ctl(this->_proxy->epfd, EPOLL_CTL_MOD, svr->fd, &ev) == -1) {
-                throw SystemError("epoll_ctl+modio Client::_process", errno);
-            }
-        }
-    } else {
-        _response_ready();
-    }
-    LOG(DEBUG) << "Processed, rest buffer " << this->_buffer.size();
-}
-
-void Client::_response_ready()
-{
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    ev.data.ptr = this;
-    if (epoll_ctl(_proxy->epfd, EPOLL_CTL_MOD, this->fd, &ev) == -1) {
-        throw SystemError("epoll_ctl-modio", errno);
-    }
-}
-
-void Client::group_responsed()
-{
-    if (--_awaiting_count == 0) {
-        _response_ready();
-    }
-}
-
-void Client::add_peer(Server* svr)
-{
-    this->_peers.insert(svr);
-}
-
-void Client::stat_proccessed(Interval cmd_elapse)
-{
-    _proxy->stat_proccessed(cmd_elapse);
-}
-
-void Client::push_command(util::sptr<CommandGroup> g)
-{
-    this->_parsed_groups.push_back(std::move(g));
-}
-
 Proxy::Proxy(util::Address const& remote)
     : _clients_count(0)
-    , _server_map([this](std::string const& host, int port)
-                  {
-                      return new Server(host, port, this);
-                  })
     , _active_slot_updaters_count(0)
     , _total_cmd_elapse(0)
     , _total_cmd(0)
-    , _server_closed(false)
+    , _slot_map_expired(false)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
@@ -458,7 +123,7 @@ Proxy::Proxy(util::Address const& remote)
 
 Proxy::~Proxy()
 {
-    close(epfd);
+    ::close(epfd);
 }
 
 void Proxy::_update_slot_map()
@@ -471,15 +136,25 @@ void Proxy::_update_slot_map()
                     LOG(DEBUG) << "Discard a failed node";
                     return false;
                 }
-                std::map<slot, util::Address> m(updater->deliver_map());
-                for (auto i = m.begin(); i != m.end(); ++i) {
-                    if (i->second.host.empty()) {
-                        LOG(DEBUG) << "Discard result because address is empty string "
-                                   << ':' << i->second.port;
+                std::vector<RedisNode> nodes(updater->deliver_map());
+                std::set<slot> covered_slots;
+                for (RedisNode const& node: nodes) {
+                    if (node.addr.host.empty()) {
+                        LOG(DEBUG) << "Discard result because address is empty string :" << node.addr.port;
                         return false;
                     }
+                    for (auto const& begin_end: node.slot_ranges) {
+                        for (slot s = begin_end.first; s <= begin_end.second; ++s) {
+                            covered_slots.insert(s);
+                        }
+                    }
                 }
-                _set_slot_map(std::move(m));
+                if (covered_slots.size() < CLUSTER_SLOT_COUNT) {
+                    LOG(DEBUG) << "Discard result because only " << covered_slots.size() << " slots covered by "
+                               << updater->addr.host << ':' << updater->addr.port;
+                    return false;
+                }
+                this->_set_slot_map(std::move(nodes));
                 return true;
             }))
     {
@@ -489,24 +164,18 @@ void Proxy::_update_slot_map()
     LOG(INFO) << "Slot map updated";
 }
 
-void Proxy::_set_slot_map(std::map<slot, util::Address> map)
+void Proxy::_set_slot_map(std::vector<RedisNode> map)
 {
-    auto s(_server_map.set_map(std::move(map)));
-    std::for_each(s.begin(), s.end(),
-                  [&](Server* s)
-                  {
-                      std::vector<util::sref<Command>> c(s->deliver_commands());
-                      _retrying_commands.insert(_retrying_commands.end(),
-                                                c.begin(), c.end());
-                      delete s;
-                  });
-
-    if (!_server_map.all_covered()) {
-        LOG(ERROR) << "Map not covered all slots";
-        return _retrieve_slot_map();
+    for (Server* s: _server_map.replace_map(map, this)) {
+        LOG(DEBUG) << "Replaced server " << s;
+        std::vector<util::sref<Command>> c(s->deliver_commands());
+        this->_retrying_commands.insert(_retrying_commands.end(), c.begin(), c.end());
+        this->_inactive_long_connections.insert(
+            s->attached_long_connections.begin(), s->attached_long_connections.end());
+        Server::close_server(s);
     }
 
-    _server_closed = false;
+    _slot_map_expired = false;
     if (_retrying_commands.empty()) {
         return;
     }
@@ -514,40 +183,38 @@ void Proxy::_set_slot_map(std::map<slot, util::Address> map)
     LOG(DEBUG) << "Retry MOVED or ASK: " << _retrying_commands.size();
     std::set<Server*> svrs;
     std::vector<util::sref<Command>> retrying(std::move(_retrying_commands));
-    std::for_each(retrying.begin(), retrying.end(),
-                  [&](util::sref<Command> cmd)
-                  {
-                      Server* s = cmd->select_server(this);
-                      if (s == nullptr) {
-                          return;
-                      }
-                      svrs.insert(s);
-                  });
+    for (util::sref<Command> cmd: retrying) {
+        Server* s = cmd->select_server(this);
+        if (s == nullptr) {
+            LOG(ERROR) << "Select null server after slot map updated";
+            _slot_map_expired = true;
+            _retrying_commands.push_back(cmd);
+            continue;
+        }
+        svrs.insert(s);
+    }
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-    std::for_each(svrs.begin(), svrs.end(),
-                  [&](Server* svr)
-                  {
-                      ev.data.ptr = svr;
-                      if (epoll_ctl(this->epfd, EPOLL_CTL_MOD,
-                                    svr->fd, &ev) == -1)
-                      {
-                          throw SystemError(
-                              "epoll_ctl+modio Proxy::_set_slot_map", errno);
-                      }
-                  });
+    for (Server* svr: svrs) {
+        ev.data.ptr = svr;
+        if (epoll_ctl(this->epfd, EPOLL_CTL_MOD, svr->fd, &ev) == -1) {
+            throw SystemError("epoll_ctl+modio Proxy::_set_slot_map", errno);
+        }
+    }
 }
 
 void Proxy::_retrieve_slot_map()
 {
-    _server_map.iterate_addr(
-        [&](util::Address const& addr)
+    std::for_each(
+        Server::addr_begin(), Server::addr_end(),
+        [this](std::pair<util::Address, Server*> const& addr_server)
         {
+            util::Address const& addr = addr_server.first;
             try {
-                _slot_updaters.push_back(
+                this->_slot_updaters.push_back(
                     util::mkptr(new SlotsMapUpdater(addr, this)));
-                ++_active_slot_updaters_count;
+                ++this->_active_slot_updaters_count;
             } catch (ConnectionRefused& e) {
                 LOG(INFO) << e.what();
                 LOG(INFO) << "Disconnected: " << addr.host << ':' << addr.port;
@@ -567,15 +234,15 @@ void Proxy::notify_slot_map_updated()
     }
 }
 
-void Proxy::server_closed()
+void Proxy::update_slot_map()
 {
-    _server_closed = true;
+    _slot_map_expired = true;
 }
 
 bool Proxy::_should_update_slot_map() const
 {
     return _slot_updaters.empty() &&
-        (!_retrying_commands.empty() || _server_closed);
+        (!_retrying_commands.empty() || _slot_map_expired);
 }
 
 void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
@@ -614,7 +281,12 @@ void Proxy::_loop()
     }
 
     std::set<Connection*> active_conns;
-    std::set<Connection*> closed_conns;
+
+    for (Connection* c: this->_inactive_long_connections) {
+        c->close();
+    }
+    std::set<Connection*> closed_conns(std::move(this->_inactive_long_connections));
+
     LOG(DEBUG) << "*epoll wait: " << nfds;
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
@@ -624,20 +296,18 @@ void Proxy::_loop()
         }
         active_conns.insert(conn);
         try {
-            conn->triggered(events[i].events);
+            conn->on_events(events[i].events);
         } catch (IOErrorBase& e) {
             LOG(ERROR) << "IOError: " << e.what() << " :: "
                        << "Close connection to " << conn->fd << " in " << conn;
-            conn->close();
+            conn->on_error();
             closed_conns.insert(conn);
         }
     }
     LOG(DEBUG) << "*epoll done";
-    std::for_each(active_conns.begin(), active_conns.end(),
-                  [&](Connection* c)
-                  {
-                      c->event_handled(active_conns);
-                  });
+    for (Connection* c: active_conns) {
+        c->after_events(active_conns);
+    }
     _finished_slot_updaters.clear();
     if (this->_should_update_slot_map()) {
         LOG(DEBUG) << "Should update slot map";
@@ -648,7 +318,7 @@ void Proxy::_loop()
 Server* Proxy::get_server_by_slot(slot key_slot)
 {
     Server* s = _server_map.get_by_slot(key_slot);
-    return (s == nullptr || s->fd == -1) ? nullptr : s;
+    return (s == nullptr || s->closed()) ? nullptr : s;
 }
 
 void Proxy::accept_from(int listen_fd)
@@ -682,7 +352,7 @@ void Proxy::accept_from(int listen_fd)
 
 void Proxy::pop_client(Client* cli)
 {
-    _erase_command_if(
+    util::erase_if(
         this->_retrying_commands,
         [&](util::sref<Command> cmd)
         {

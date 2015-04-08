@@ -18,6 +18,9 @@ namespace cerb {
         FDWrapper(FDWrapper const&) = delete;
 
         ~FDWrapper();
+
+        bool closed() const;
+        void close();
     };
 
     int new_stream_socket();

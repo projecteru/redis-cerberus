@@ -5,7 +5,7 @@
 
 using namespace cerb;
 
-void calc_slot_for(KeySlotCalc& c, std::string const& s) 
+static void calc_slot_for(KeySlotCalc& c, std::string const& s)
 {
     for (auto b: s) {
         c.next_byte(byte(b));

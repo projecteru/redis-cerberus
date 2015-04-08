@@ -4,6 +4,8 @@
 
 using namespace cerb;
 
+static bool read_slave = false;
+
 std::string cerb::stats_all()
 {
     std::vector<std::string> clients_counts;
@@ -25,7 +27,13 @@ std::string cerb::stats_all()
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
         "\ncompleted_commands:", util::str(total_commands),
         "\ntotal_process_elapse:", util::str(total_cmd_elapse),
+        "\nread_slave:", ::read_slave ? "1" : "0",
     });
+}
+
+void cerb::stats_set_read_slave()
+{
+    ::read_slave = true;
 }
 
 BufferStatAllocator::pointer BufferStatAllocator::allocate(
