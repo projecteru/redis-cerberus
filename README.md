@@ -45,7 +45,7 @@ The argument is path of a configuration file, which should contains at least
 * bind : (integer) local port to listen
 * node : (address) one of active node in a cluster; format should be host:port
 * thread: (integer) number of threads
-* read-slave: (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible.
+* read-slave: (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible.  For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB).
 
 Commands in Particular
 ===
@@ -83,14 +83,3 @@ others: `PFADD`, `PFCOUNT`, `PFMERGE`,
 `ROLE`, `SAVE`, `SHUTDOWN`, `SLAVEOF`, `SLOWLOG`, `SYNC`, `TIME`,
 
 For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/Redis-%E9%9B%86%E7%BE%A4%E4%BB%A3%E7%90%86%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E4%B8%8E%E4%BD%BF%E7%94%A8).
-
-Readonly Commands
----
-
-Only the following commands are allowed when a proxy runs with "read-slave" mode
-
-    DUMP EXISTS TTL PTTL TYPE GET BITCOUNT GETBIT GETRANGE STRLEN
-    HGET HGETALL HKEYS HVALS HLEN HEXISTS HMGET HSCAN
-    LINDEX LLEN LRANGE SCARD SISMEMBER SMEMBERS SSCAN
-    ZCARD ZSCAN ZCOUNT ZLEXCOUNT ZRANGE ZRANGEBYLEX ZREVRANGEBYLEX
-    ZRANGEBYSCORE ZRANK ZREVRANGE ZREVRANGEBYSCORE ZREVRANK ZSCORE
