@@ -16,18 +16,18 @@ all:main.d core_objs utilities libs_3rdparty
 
 runtest:core_objs utilities libs_3rdparty
 	rm -f tmp.*.txt
-	make -f test/Makefile MODE=$(MODE) COMPILER=$(COMPILER) \
-	                      CHECK_MEM=$(CHECK_MEM)
+	@make -f test/Makefile MODE=$(MODE) COMPILER=$(COMPILER) \
+	                       CHECK_MEM=$(CHECK_MEM)
 
 utilities:
-	make -f utils/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
+	@make -f utils/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
 
 core_objs:
-	make -f core/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
+	@make -f core/Makefile MODE=$(MODE) COMPILER=$(COMPILER)
 
 libs_3rdparty:
-	mkdir -p $(LIBS_DIR)
-	make -f backtracpp/Makefile LIB_DIR=$(LIBS_DIR) REL_PATH=backtracpp
+	@mkdir -p $(LIBS_DIR)
+	@make -f backtracpp/Makefile LIB_DIR=$(LIBS_DIR) REL_PATH=backtracpp
 
 clean:
 	rm -f tmp.*

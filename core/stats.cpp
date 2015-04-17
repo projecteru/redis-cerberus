@@ -1,5 +1,5 @@
-#include "core/stats.hpp"
-#include "core/globals.hpp"
+#include "stats.hpp"
+#include "globals.hpp"
 #include "utils/string.h"
 
 using namespace cerb;

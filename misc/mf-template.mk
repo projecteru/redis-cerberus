@@ -26,13 +26,13 @@ COMPILE=$(CC) $(CFLAGS) $(INCLUDE)
 COMPILE_GENERATED=$(CC) $(INCLUDE)
 
 %.d:$(WORKDIR)/%.cpp
-	echo -n "$(WORKDIR)/" > $(MKTMP)
-	$(RESOLVE_DEP) $< >> $(MKTMP)
-	echo "	$(COMPILE) $< -o $(WORKDIR)/$*.o" >> $(MKTMP)
-	make -f $(MKTMP)
+	@echo -n "$(WORKDIR)/" > $(MKTMP)
+	@$(RESOLVE_DEP) $< >> $(MKTMP)
+	@echo "	$(COMPILE) $< -o $(WORKDIR)/$*.o" >> $(MKTMP)
+	@make -f $(MKTMP)
 
 %.dt:$(TESTDIR)/%.cpp
-	echo -n "$(TESTDIR)/" > $(MKTMP)
-	$(RESOLVE_DEP) $< >> $(MKTMP)
-	echo "	$(COMPILE) $< -o $(TESTDIR)/$*.o" >> $(MKTMP)
-	make -f $(MKTMP)
+	@echo -n "$(TESTDIR)/" > $(MKTMP)
+	@$(RESOLVE_DEP) $< >> $(MKTMP)
+	@echo "	$(COMPILE) $< -o $(TESTDIR)/$*.o" >> $(MKTMP)
+	@make -f $(MKTMP)
