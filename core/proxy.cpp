@@ -111,6 +111,7 @@ Proxy::Proxy(util::Address const& remote)
     , _active_slot_updaters_count(0)
     , _total_cmd_elapse(0)
     , _total_cmd(0)
+    , _last_cmd_elapse(0)
     , _slot_map_expired(false)
     , epfd(epoll_create(MAX_EVENTS))
 {
@@ -365,4 +366,5 @@ void Proxy::stat_proccessed(Interval cmd_elapse)
 {
     _total_cmd_elapse += cmd_elapse;
     ++_total_cmd;
+    _last_cmd_elapse = cmd_elapse;
 }

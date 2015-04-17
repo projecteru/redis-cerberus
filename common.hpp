@@ -5,7 +5,7 @@
 
 #include "utils/typetraits.hpp"
 
-#define VERSION "0.6.0-2015-04-14"
+#define VERSION "0.6.2-2015-04-17"
 
 namespace cerb {
 
@@ -17,6 +17,8 @@ namespace cerb {
     typedef std::chrono::high_resolution_clock Clock;
     typedef Clock::time_point Time;
     typedef std::chrono::duration<double> Interval;
+
+    int const CLUSTER_SLOT_COUNT = 16384;
 
 }
 

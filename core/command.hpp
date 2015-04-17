@@ -20,10 +20,12 @@ namespace cerb {
         util::sref<CommandGroup> const group;
         bool const need_send;
 
-        virtual ~Command() {}
+        virtual ~Command() = default;
 
         virtual Server* select_server(Proxy* proxy) = 0;
-        virtual void copy_response(Buffer rsp, bool error);
+        virtual void on_remote_responsed(Buffer rsp, bool error);
+
+        void responsed();
 
         Command(Buffer b, util::sref<CommandGroup> g, bool s)
             : buffer(std::move(b))
@@ -45,12 +47,12 @@ namespace cerb {
     public:
         util::sref<Client> const client;
 
-        CommandGroup(util::sref<Client> cli)
+        explicit CommandGroup(util::sref<Client> cli)
             : client(cli)
         {}
 
         CommandGroup(CommandGroup const&) = delete;
-        virtual ~CommandGroup() {}
+        virtual ~CommandGroup() = default;
 
         virtual bool long_connection() const
         {

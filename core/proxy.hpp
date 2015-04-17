@@ -67,6 +67,7 @@ namespace cerb {
         std::set<Connection*> _inactive_long_connections;
         Interval _total_cmd_elapse;
         long _total_cmd;
+        Interval _last_cmd_elapse;
         bool _slot_map_expired;
 
         bool _should_update_slot_map() const;
@@ -95,6 +96,11 @@ namespace cerb {
         Interval total_cmd_elapse() const
         {
             return _total_cmd_elapse;
+        }
+
+        Interval last_cmd_elapse() const
+        {
+            return _last_cmd_elapse;
         }
 
         Server* random_addr()

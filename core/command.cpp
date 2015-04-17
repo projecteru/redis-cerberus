@@ -13,6 +13,7 @@
 #include "globals.hpp"
 #include "utils/logging.hpp"
 #include "utils/random.hpp"
+#include "utils/string.h"
 
 using namespace cerb;
 
@@ -70,7 +71,7 @@ namespace {
             return ::select_server_for(proxy, this, this->current_key_slot);
         }
 
-        void copy_response(Buffer rsp, bool error)
+        void on_remote_responsed(Buffer rsp, bool error)
         {
             on_rsp(std::move(rsp), error);
         }
@@ -229,7 +230,7 @@ namespace {
         void append_buffer_to(std::vector<util::sref<Buffer>>& b)
         {
             b.push_back(util::mkref(arr_payload));
-            for (auto const& c: commands) {
+            for (auto const& c: this->commands) {
                 b.push_back(util::mkref(c->buffer));
             }
         }
@@ -237,11 +238,9 @@ namespace {
         int total_buffer_size() const
         {
             int i = arr_payload.size();
-            std::for_each(commands.begin(), commands.end(),
-                          [&](util::sptr<Command> const& command)
-                          {
-                              i += command->buffer.size();
-                          });
+            for (auto const& c: this->commands) {
+                i += c->buffer.size();
+            }
             return i;
         }
 
@@ -323,7 +322,7 @@ namespace {
         virtual util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end) = 0;
 
-        SpecialCommandParser() {}
+        SpecialCommandParser() = default;
         SpecialCommandParser(SpecialCommandParser const&) = delete;
     };
 
@@ -568,25 +567,25 @@ namespace {
             {
                 if (error) {
                     this->buffer = std::move(rsp);
-                    return this->group->command_responsed();
+                    return this->responsed();
                 }
                 if (rsp.same_as_string("$-1\r\n")) {
                     this->buffer = Buffer::from_string(
                         "-ERR no such key\r\n");
-                    return this->group->command_responsed();
+                    return this->responsed();
                 }
                 this->buffer = Buffer::from_string("*3\r\n$3\r\nSET\r\n");
                 this->buffer.append_from(new_key.begin(), new_key.end());
                 this->buffer.append_from(rsp.begin(), rsp.end());
                 this->current_key_slot = new_key_slot;
                 this->on_rsp =
-                    [&](Buffer rsp, bool error)
+                    [this](Buffer rsp, bool error)
                     {
                         if (error) {
                             this->buffer = std::move(rsp);
-                            return this->group->command_responsed();
+                            return this->responsed();
                         }
-                        rsp_set();
+                        this->rsp_set();
                     };
                 this->group->client->reactivate(util::mkref(*this));
             }
@@ -597,10 +596,10 @@ namespace {
                 this->buffer.append_from(old_key.begin(), old_key.end());
                 this->current_key_slot = old_key_slot;
                 this->on_rsp =
-                    [&](Buffer, bool)
+                    [this](Buffer, bool)
                     {
                         this->buffer = Buffer::from_string("+OK\r\n");
-                        this->group->command_responsed();
+                        this->responsed();
                     };
                 this->group->client->reactivate(util::mkref(*this));
             }
@@ -1009,9 +1008,14 @@ namespace {
 
 }
 
-void Command::copy_response(Buffer rsp, bool)
+void Command::on_remote_responsed(Buffer rsp, bool)
 {
     this->buffer = std::move(rsp);
+    this->responsed();
+}
+
+void Command::responsed()
+{
     this->group->command_responsed();
 }
 

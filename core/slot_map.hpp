@@ -9,8 +9,6 @@
 
 namespace cerb {
 
-    int const CLUSTER_SLOT_COUNT = 16384;
-
     class Server;
     class Proxy;
 
