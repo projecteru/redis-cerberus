@@ -11,15 +11,19 @@ std::string cerb::stats_all()
     std::vector<std::string> clients_counts;
     std::vector<std::string> mem_buffer_allocs;
     std::vector<std::string> last_cmd_elapse;
+    std::vector<std::string> last_remote_cost;
     long total_commands = 0;
     Interval total_cmd_elapse(0);
+    Interval total_remote_cost(0);
     for (auto const& thread: cerb_global::all_threads) {
         util::sref<Proxy const> proxy(thread.get_proxy());
         clients_counts.push_back(util::str(proxy->clients_count()));
         total_commands += proxy->total_cmd();
         total_cmd_elapse += proxy->total_cmd_elapse();
+        total_remote_cost += proxy->total_remote_cost();
         mem_buffer_allocs.push_back(util::str(thread.buffer_allocated()));
         last_cmd_elapse.push_back(util::str(proxy->last_cmd_elapse()));
+        last_remote_cost.push_back(util::str(proxy->last_remote_cost()));
     }
     return util::join("", {
         "version:" VERSION
@@ -29,7 +33,9 @@ std::string cerb::stats_all()
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
         "\ncompleted_commands:", util::str(total_commands),
         "\ntotal_process_elapse:", util::str(total_cmd_elapse),
+        "\ntotal_remote_cost:", util::str(total_remote_cost),
         "\nlast_command_elapse:", util::join(",", last_cmd_elapse),
+        "\nlast_remote_cost:", util::join(",", last_remote_cost),
     });
 }
 

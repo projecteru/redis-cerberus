@@ -13,7 +13,7 @@ namespace cerb {
 
     class Proxy;
     class Client;
-    class Command;
+    class DataCommand;
 
     class Server
         : public ProxyConnection
@@ -21,8 +21,8 @@ namespace cerb {
         Proxy* _proxy;
         Buffer _buffer;
 
-        std::vector<util::sref<Command>> _commands;
-        std::vector<util::sref<Command>> _ready_commands;
+        std::vector<util::sref<DataCommand>> _commands;
+        std::vector<util::sref<DataCommand>> _ready_commands;
 
         void _send_to();
         void _recv_from();
@@ -50,9 +50,9 @@ namespace cerb {
         void on_events(int events);
         void after_events(std::set<Connection*>&);
 
-        void push_client_command(util::sref<Command> cmd);
+        void push_client_command(util::sref<DataCommand> cmd);
         void pop_client(Client* cli);
-        std::vector<util::sref<Command>> deliver_commands();
+        std::vector<util::sref<DataCommand>> deliver_commands();
 
         void attach_long_connection(ProxyConnection* c)
         {

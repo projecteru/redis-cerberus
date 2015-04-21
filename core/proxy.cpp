@@ -110,8 +110,10 @@ Proxy::Proxy(util::Address const& remote)
     : _clients_count(0)
     , _active_slot_updaters_count(0)
     , _total_cmd_elapse(0)
+    , _total_remote_cost(0)
     , _total_cmd(0)
     , _last_cmd_elapse(0)
+    , _last_remote_cost(0)
     , _slot_map_expired(false)
     , epfd(epoll_create(MAX_EVENTS))
 {
@@ -169,7 +171,7 @@ void Proxy::_set_slot_map(std::vector<RedisNode> map)
 {
     for (Server* s: _server_map.replace_map(map, this)) {
         LOG(DEBUG) << "Replaced server " << s;
-        std::vector<util::sref<Command>> c(s->deliver_commands());
+        std::vector<util::sref<DataCommand>> c(s->deliver_commands());
         this->_retrying_commands.insert(_retrying_commands.end(), c.begin(), c.end());
         this->_inactive_long_connections.insert(
             s->attached_long_connections.begin(), s->attached_long_connections.end());
@@ -183,8 +185,8 @@ void Proxy::_set_slot_map(std::vector<RedisNode> map)
 
     LOG(DEBUG) << "Retry MOVED or ASK: " << _retrying_commands.size();
     std::set<Server*> svrs;
-    std::vector<util::sref<Command>> retrying(std::move(_retrying_commands));
-    for (util::sref<Command> cmd: retrying) {
+    std::vector<util::sref<DataCommand>> retrying(std::move(_retrying_commands));
+    for (util::sref<DataCommand> cmd: retrying) {
         Server* s = cmd->select_server(this);
         if (s == nullptr) {
             LOG(ERROR) << "Select null server after slot map updated";
@@ -246,7 +248,7 @@ bool Proxy::_should_update_slot_map() const
         (!_retrying_commands.empty() || _slot_map_expired);
 }
 
-void Proxy::retry_move_ask_command_later(util::sref<Command> cmd)
+void Proxy::retry_move_ask_command_later(util::sref<DataCommand> cmd)
 {
     _retrying_commands.push_back(cmd);
     LOG(DEBUG) << "A MOVED or ASK added for later retry - " << _retrying_commands.size();
@@ -355,16 +357,18 @@ void Proxy::pop_client(Client* cli)
 {
     util::erase_if(
         this->_retrying_commands,
-        [&](util::sref<Command> cmd)
+        [&](util::sref<DataCommand> cmd)
         {
             return cmd->group->client.is(cli);
         });
     --this->_clients_count;
 }
 
-void Proxy::stat_proccessed(Interval cmd_elapse)
+void Proxy::stat_proccessed(Interval cmd_elapse, Interval remote_cost)
 {
     _total_cmd_elapse += cmd_elapse;
     ++_total_cmd;
     _last_cmd_elapse = cmd_elapse;
+    _total_remote_cost += remote_cost;
+    _last_remote_cost = remote_cost;
 }

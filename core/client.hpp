@@ -43,7 +43,6 @@ namespace cerb {
         void add_peer(Server* svr);
         void reactivate(util::sref<Command> cmd);
         void push_command(util::sptr<CommandGroup> g);
-        void stat_proccessed(Interval cmd_elapse);
     };
 
 }

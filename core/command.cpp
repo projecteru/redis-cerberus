@@ -22,7 +22,7 @@ namespace {
     std::string const RSP_OK_STR("+OK\r\n");
     Buffer RSP_OK(Buffer::from_string(RSP_OK_STR));
 
-    Server* select_server_for(Proxy* proxy, Command* cmd, slot key_slot)
+    Server* select_server_for(Proxy* proxy, DataCommand* cmd, slot key_slot)
     {
         Server* svr = proxy->get_server_by_slot(key_slot);
         if (svr == nullptr) {
@@ -35,12 +35,12 @@ namespace {
     }
 
     class OneSlotCommand
-        : public Command
+        : public DataCommand
     {
         slot const key_slot;
     public:
         OneSlotCommand(Buffer b, util::sref<CommandGroup> g, slot ks)
-            : Command(std::move(b), g, true)
+            : DataCommand(std::move(b), g)
             , key_slot(ks)
         {
             LOG(DEBUG) << "-Keyslot = " << this->key_slot;
@@ -53,7 +53,7 @@ namespace {
     };
 
     class MultiStepsCommand
-        : public Command
+        : public DataCommand
     {
     public:
         slot current_key_slot;
@@ -61,7 +61,7 @@ namespace {
 
         MultiStepsCommand(util::sref<CommandGroup> group, slot s,
                           std::function<void(Buffer, bool)> r)
-            : Command(group, true)
+            : DataCommand(group)
             , current_key_slot(s)
             , on_rsp(std::move(r))
         {}
@@ -85,7 +85,7 @@ namespace {
         {
         public:
             DirectCommand(Buffer b, util::sref<CommandGroup> g)
-                : Command(std::move(b), g, false)
+                : Command(std::move(b), g)
             {}
 
             Server* select_server(Proxy*)
@@ -132,13 +132,6 @@ namespace {
     class StatsCommandGroup
         : public CommandGroup
     {
-    public:
-        ~StatsCommandGroup()
-        {
-            if (this->complete) {
-                this->client->stat_proccessed(Clock::now() - this->creation);
-            }
-        }
     protected:
         explicit StatsCommandGroup(util::sref<Client> cli)
             : CommandGroup(cli)
@@ -153,13 +146,21 @@ namespace {
         {
             return true;
         }
+
+        void collect_stats(Proxy* p) const
+        {
+            p->stat_proccessed(Clock::now() - this->creation,
+                               this->avg_commands_remote_cost());
+        }
+
+        virtual Interval avg_commands_remote_cost() const = 0;
     };
 
     class SingleCommandGroup
         : public StatsCommandGroup
     {
     public:
-        util::sptr<Command> command;
+        util::sptr<DataCommand> command;
 
         explicit SingleCommandGroup(util::sref<Client> cli)
             : StatsCommandGroup(cli)
@@ -191,6 +192,11 @@ namespace {
         {
             command->select_server(proxy);
         }
+
+        Interval avg_commands_remote_cost() const
+        {
+            return command->remote_cost();
+        }
     };
 
     class MultipleCommandsGroup
@@ -198,7 +204,7 @@ namespace {
     {
     public:
         Buffer arr_payload;
-        std::vector<util::sptr<Command>> commands;
+        std::vector<util::sptr<DataCommand>> commands;
         int awaiting_count;
 
         explicit MultipleCommandsGroup(util::sref<Client> c)
@@ -206,11 +212,9 @@ namespace {
             , awaiting_count(0)
         {}
 
-        void append_command(util::sptr<Command> c)
+        void append_command(util::sptr<DataCommand> c)
         {
-            if (c->need_send) {
-                awaiting_count += 1;
-            }
+            awaiting_count += 1;
             commands.push_back(std::move(c));
         }
 
@@ -249,6 +253,19 @@ namespace {
             for (auto& c: this->commands) {
                 c->select_server(proxy);
             }
+        }
+
+        Interval avg_commands_remote_cost() const
+        {
+            if (this->commands.empty()) {
+                return Interval(0);
+            }
+            return std::accumulate(
+                this->commands.begin(), this->commands.end(), Interval(0),
+                [](Interval a, util::sptr<DataCommand> const& c)
+                {
+                    return a + c->remote_cost();
+                }) / this->commands.size();
         }
     };
 

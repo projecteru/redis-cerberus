@@ -8,7 +8,7 @@
 
 namespace cerb {
 
-    class Command;
+    class DataCommand;
     class Proxy;
 
     class Response {
@@ -17,7 +17,7 @@ namespace cerb {
         virtual ~Response() {}
         Response(Response const&) = delete;
 
-        virtual void rsp_to(util::sref<Command> c, util::sref<Proxy> p) = 0;
+        virtual void rsp_to(util::sref<DataCommand> c, util::sref<Proxy> p) = 0;
         virtual Buffer const& dump_buffer() const = 0;
     };
 

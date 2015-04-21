@@ -63,11 +63,13 @@ namespace cerb {
         std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
         std::vector<util::sptr<SlotsMapUpdater>> _finished_slot_updaters;
         int _active_slot_updaters_count;
-        std::vector<util::sref<Command>> _retrying_commands;
+        std::vector<util::sref<DataCommand>> _retrying_commands;
         std::set<Connection*> _inactive_long_connections;
         Interval _total_cmd_elapse;
+        Interval _total_remote_cost;
         long _total_cmd;
         Interval _last_cmd_elapse;
+        Interval _last_remote_cost;
         bool _slot_map_expired;
 
         bool _should_update_slot_map() const;
@@ -98,9 +100,19 @@ namespace cerb {
             return _total_cmd_elapse;
         }
 
+        Interval total_remote_cost() const
+        {
+            return _total_remote_cost;
+        }
+
         Interval last_cmd_elapse() const
         {
             return _last_cmd_elapse;
+        }
+
+        Interval last_remote_cost() const
+        {
+            return _last_remote_cost;
         }
 
         Server* random_addr()
@@ -111,11 +123,11 @@ namespace cerb {
         Server* get_server_by_slot(slot key_slot);
         void notify_slot_map_updated();
         void update_slot_map();
-        void retry_move_ask_command_later(util::sref<Command> cmd);
+        void retry_move_ask_command_later(util::sref<DataCommand> cmd);
         void run(int listen_port);
         void accept_from(int listen_fd);
         void pop_client(Client* cli);
-        void stat_proccessed(Interval cmd_elapse);
+        void stat_proccessed(Interval cmd_elapse, Interval remote_cost);
     };
 
 }

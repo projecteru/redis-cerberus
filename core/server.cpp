@@ -46,10 +46,14 @@ void Server::_send_to()
     std::vector<util::sref<Buffer>> buffer_arr;
     this->_ready_commands = std::move(this->_commands);
     buffer_arr.reserve(this->_ready_commands.size());
-    for (auto const& c: this->_ready_commands) {
+    for (util::sref<DataCommand> c: this->_ready_commands) {
         buffer_arr.push_back(util::mkref(c->buffer));
     }
     Buffer::writev(this->fd, buffer_arr);
+    auto now = Clock::now();
+    for (util::sref<DataCommand> c: this->_ready_commands) {
+        c->sent_time = now;
+    }
 
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
@@ -73,27 +77,25 @@ void Server::_recv_from()
     if (responses.size() > this->_ready_commands.size()) {
         LOG(ERROR) << "+Error on split, expected size: " << this->_ready_commands.size()
                    << " actual: " << responses.size() << " dump buffer:";
-        std::for_each(responses.begin(), responses.end(),
-                      [](util::sptr<Response> const& rsp)
-                      {
-                          LOG(ERROR) << "::: " << rsp->dump_buffer().to_string();
-                      });
+        for (util::sptr<Response> const& rsp: responses) {
+            LOG(ERROR) << "::: " << rsp->dump_buffer().to_string();
+        }
         LOG(ERROR) << "Rest buffer: " << this->_buffer.to_string();
         LOG(FATAL) << "Exit";
         exit(1);
     }
     LOG(DEBUG) << "+responses size: " << responses.size();
     LOG(DEBUG) << "+rest buffer: " << this->_buffer.size() << ": " << this->_buffer.to_string();
-    auto client_it = this->_ready_commands.begin();
-    std::for_each(responses.begin(), responses.end(),
-                  [&](util::sptr<Response>& rsp)
-                  {
-                      util::sref<Command> c = *client_it++;
-                      if (c.not_nul()) {
-                          rsp->rsp_to(c, util::mkref(*this->_proxy));
-                      }
-                  });
-    this->_ready_commands.erase(this->_ready_commands.begin(), client_it);
+    auto cmd_it = this->_ready_commands.begin();
+    auto now = Clock::now();
+    for (util::sptr<Response>& rsp: responses) {
+        util::sref<DataCommand> c = *cmd_it++;
+        if (c.not_nul()) {
+            rsp->rsp_to(c, util::mkref(*this->_proxy));
+            c->resp_time = now;
+        }
+    }
+    this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
@@ -102,7 +104,7 @@ void Server::_recv_from()
     }
 }
 
-void Server::push_client_command(util::sref<Command> cmd)
+void Server::push_client_command(util::sref<DataCommand> cmd)
 {
     _commands.push_back(cmd);
     cmd->group->client->add_peer(this);
@@ -112,24 +114,22 @@ void Server::pop_client(Client* cli)
 {
     util::erase_if(
         this->_commands,
-        [&](util::sref<Command> cmd)
+        [&](util::sref<DataCommand> cmd)
         {
             return cmd->group->client.is(cli);
         });
-    std::for_each(this->_ready_commands.begin(), this->_ready_commands.end(),
-                  [&](util::sref<Command>& cmd)
-                  {
-                      if (cmd.not_nul() && cmd->group->client.is(cli)) {
-                          cmd.reset();
-                      }
-                  });
+    for (util::sref<DataCommand>& cmd: this->_ready_commands) {
+        if (cmd.not_nul() && cmd->group->client.is(cli)) {
+            cmd.reset();
+        }
+    }
 }
 
-std::vector<util::sref<Command>> Server::deliver_commands()
+std::vector<util::sref<DataCommand>> Server::deliver_commands()
 {
     util::erase_if(
         this->_ready_commands,
-        [](util::sref<Command> cmd)
+        [](util::sref<DataCommand> cmd)
         {
             return cmd.nul();
         });
@@ -165,8 +165,8 @@ std::map<util::Address, Server*>::iterator Server::addr_end()
     return servers_map.end();
 }
 
-static std::function<void(int, std::vector<util::sref<Command>>&)> on_server_connected(
-    [](int, std::vector<util::sref<Command>>&) {});
+static std::function<void(int, std::vector<util::sref<DataCommand>>&)> on_server_connected(
+    [](int, std::vector<util::sref<DataCommand>>&) {});
 
 void Server::_reconnect(util::Address const& addr, Proxy* p)
 {
@@ -230,9 +230,9 @@ static Buffer const READ_ONLY_CMD(Buffer::from_string("READONLY\r\n"));
 void Server::send_readonly_for_each_conn()
 {
     ::on_server_connected =
-        [](int fd, std::vector<util::sref<Command>>& cmds)
+        [](int fd, std::vector<util::sref<DataCommand>>& cmds)
         {
             READ_ONLY_CMD.write(fd);
-            cmds.push_back(util::sref<Command>(nullptr));
+            cmds.push_back(util::sref<DataCommand>(nullptr));
         };
 }
