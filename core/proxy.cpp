@@ -86,13 +86,13 @@ void SlotsMapUpdater::on_events(int events)
         try {
             this->_recv_rsp();
         } catch (BadRedisMessage& e) {
-            LOG(FATAL) << "Receive bad message from server on update from "
+            LOG(ERROR) << "Receive bad message from server on update from "
                        << this->fd
                        << " because: " << e.what()
-                       << " buffer length=" << this->_rsp.size()
-                       << " dump buffer (before close): "
+                       << " buffer length=" << this->_rsp.size();
+            LOG(DEBUG) << "Dump buffer (before close): "
                        << this->_rsp.to_string();
-            exit(1);
+            _proxy->notify_slot_map_updated();
         }
     }
     if (events & EPOLLOUT) {

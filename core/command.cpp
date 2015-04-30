@@ -1011,6 +1011,14 @@ namespace {
 
         void on_arr(cerb::rint size, Buffer::iterator i)
         {
+            /*
+             * Redis server will reset a request of more than 1M args.
+             * See also
+             * https://github.com/antirez/redis/blob/3.0/src/networking.c#L1014
+             */
+            if (size > 1024 * 1024) {
+                throw BadRedisMessage("Request is too large");
+            }
             if (!_nested_array_element_count.empty()) {
                 throw BadRedisMessage("Invalid nested array as client command");
             }

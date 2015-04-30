@@ -36,8 +36,8 @@ void Client::on_events(int events)
         }
     } catch (BadRedisMessage& e) {
         LOG(ERROR) << "Receive bad message from client " << this->fd
-                   << " because: " << e.what()
-                   << " dump buffer (before close): "
+                   << " because: " << e.what();
+        LOG(DEBUG) << "Dump buffer (before close): "
                    << this->_buffer.to_string();
         return this->close();
     }
