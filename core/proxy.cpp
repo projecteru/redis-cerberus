@@ -114,14 +114,14 @@ Proxy::Proxy(util::Address const& remote)
     , _total_cmd(0)
     , _last_cmd_elapse(0)
     , _last_remote_cost(0)
-    , _slot_map_expired(false)
+    , _slot_map_expired(true)
     , epfd(epoll_create(MAX_EVENTS))
 {
     if (epfd == -1) {
         throw SystemError("epoll_create", errno);
     }
-    _slot_updaters.push_back(util::mkptr(new SlotsMapUpdater(remote, this)));
-    ++_active_slot_updaters_count;
+    std::lock_guard<std::mutex> _(this->_candidate_addrs_mutex);
+    this->_candidate_addrs.insert(remote);
 }
 
 Proxy::~Proxy()
@@ -131,61 +131,76 @@ Proxy::~Proxy()
 
 void Proxy::_update_slot_map()
 {
-    if (_slot_updaters.end() == std::find_if(
-            _slot_updaters.begin(), _slot_updaters.end(),
-            [&](util::sptr<SlotsMapUpdater>& updater)
-            {
-                if (!updater->success()) {
-                    LOG(DEBUG) << "Discard a failed node";
+    bool update_failed = _slot_updaters.end() == std::find_if(
+        _slot_updaters.begin(), _slot_updaters.end(),
+        [this](util::sptr<SlotsMapUpdater>& updater)
+        {
+            if (!updater->success()) {
+                LOG(DEBUG) << "Discard a failed node";
+                return false;
+            }
+            std::vector<RedisNode> nodes(updater->deliver_map());
+            std::set<slot> covered_slots;
+            for (RedisNode const& node: nodes) {
+                if (node.addr.host.empty()) {
+                    LOG(DEBUG) << "Discard result because address is empty string :" << node.addr.port;
                     return false;
                 }
-                std::vector<RedisNode> nodes(updater->deliver_map());
-                std::set<slot> covered_slots;
-                for (RedisNode const& node: nodes) {
-                    if (node.addr.host.empty()) {
-                        LOG(DEBUG) << "Discard result because address is empty string :" << node.addr.port;
-                        return false;
-                    }
-                    for (auto const& begin_end: node.slot_ranges) {
-                        for (slot s = begin_end.first; s <= begin_end.second; ++s) {
-                            covered_slots.insert(s);
-                        }
+                for (auto const& begin_end: node.slot_ranges) {
+                    for (slot s = begin_end.first; s <= begin_end.second; ++s) {
+                        covered_slots.insert(s);
                     }
                 }
-                if (covered_slots.size() < CLUSTER_SLOT_COUNT) {
-                    LOG(DEBUG) << "Discard result because only " << covered_slots.size() << " slots covered by "
-                               << updater->addr.host << ':' << updater->addr.port;
-                    return false;
-                }
-                this->_set_slot_map(std::move(nodes));
-                return true;
-            }))
-    {
-        throw BadClusterStatus("Fail to update slot mapping");
+            }
+            if (covered_slots.size() < CLUSTER_SLOT_COUNT) {
+                LOG(DEBUG) << "Discard result because only " << covered_slots.size() << " slots covered by "
+                           << updater->addr.host << ':' << updater->addr.port;
+                return false;
+            }
+            this->_set_slot_map(std::move(nodes));
+            LOG(INFO) << "Slot map updated";
+            return true;
+        });
+    this->_finished_slot_updaters = std::move(this->_slot_updaters);
+    if (update_failed) {
+        std::set<util::Address> r;
+        for (util::sptr<SlotsMapUpdater> const& u: this->_finished_slot_updaters) {
+            r.insert(u->addr);
+        }
+        this->_update_slot_map_failed(std::move(r));
     }
-    _finished_slot_updaters = std::move(_slot_updaters);
-    LOG(INFO) << "Slot map updated";
 }
 
-void Proxy::_set_slot_map(std::vector<RedisNode> map)
+void Proxy::_close_servers(std::set<Server*> servers)
 {
-    for (Server* s: _server_map.replace_map(map, this)) {
-        LOG(DEBUG) << "Replaced server " << s;
+    for (Server* s: servers) {
+        LOG(DEBUG) << "Closing server " << s;
         std::vector<util::sref<DataCommand>> c(s->deliver_commands());
         this->_retrying_commands.insert(_retrying_commands.end(), c.begin(), c.end());
         this->_inactive_long_connections.insert(
             s->attached_long_connections.begin(), s->attached_long_connections.end());
         Server::close_server(s);
     }
+}
+
+void Proxy::_set_slot_map(std::vector<RedisNode> map)
+{
+    this->_close_servers(_server_map.replace_map(map, this));
 
     _slot_map_expired = false;
-    if (_retrying_commands.empty()) {
+
+    {
+        std::lock_guard<std::mutex> _(this->_candidate_addrs_mutex);
+        this->_candidate_addrs.clear();
+    }
+
+    if (this->_retrying_commands.empty()) {
         return;
     }
 
-    LOG(DEBUG) << "Retry MOVED or ASK: " << _retrying_commands.size();
+    LOG(DEBUG) << "Retry MOVED or ASK: " << this->_retrying_commands.size();
     std::set<Server*> svrs;
-    std::vector<util::sref<DataCommand>> retrying(std::move(_retrying_commands));
+    std::vector<util::sref<DataCommand>> retrying(std::move(this->_retrying_commands));
     for (util::sref<DataCommand> cmd: retrying) {
         Server* s = cmd->select_server(this);
         if (s == nullptr) {
@@ -207,26 +222,50 @@ void Proxy::_set_slot_map(std::vector<RedisNode> map)
     }
 }
 
+void Proxy::_update_slot_map_failed(std::set<util::Address> addrs)
+{
+    LOG(DEBUG) << "Failed to retrieve slot map, discard all commands.";
+    this->_close_servers(_server_map.deliver());
+    for (Connection* c: this->_inactive_long_connections) {
+        c->close();
+    }
+    std::vector<util::sref<DataCommand>> cmds(std::move(this->_retrying_commands));
+    for (util::sref<DataCommand> c: cmds) {
+        c->on_remote_responsed(Buffer::from_string("-CLUSTERDOWN The cluster is down\r\n"), true);
+    }
+    _slot_map_expired = false;
+    std::lock_guard<std::mutex> _(this->_candidate_addrs_mutex);
+    this->_candidate_addrs = std::move(addrs);
+}
+
 void Proxy::_retrieve_slot_map()
 {
-    std::for_each(
-        Server::addr_begin(), Server::addr_end(),
-        [this](std::pair<util::Address, Server*> const& addr_server)
-        {
-            util::Address const& addr = addr_server.first;
-            try {
-                this->_slot_updaters.push_back(
-                    util::mkptr(new SlotsMapUpdater(addr, this)));
-                ++this->_active_slot_updaters_count;
-            } catch (ConnectionRefused& e) {
-                LOG(INFO) << e.what();
-                LOG(INFO) << "Disconnected: " << addr.host << ':' << addr.port;
-            } catch (UnknownHost& e) {
-                LOG(ERROR) << e.what();
-            }
-        });
+    std::set<util::Address> addrs;
+    if (this->_candidate_addrs.empty()) {
+        std::for_each(
+            Server::addr_begin(), Server::addr_end(),
+            [&](std::pair<util::Address, Server*> const& addr_server)
+            {
+                addrs.insert(addr_server.first);
+            });
+    } else {
+        std::lock_guard<std::mutex> _(this->_candidate_addrs_mutex);
+        addrs = std::move(this->_candidate_addrs);
+    }
+    for (util::Address const& addr: addrs) {
+        try {
+            this->_slot_updaters.push_back(
+                util::mkptr(new SlotsMapUpdater(addr, this)));
+            ++this->_active_slot_updaters_count;
+        } catch (ConnectionRefused& e) {
+            LOG(INFO) << e.what();
+            LOG(INFO) << "Disconnected: " << addr.host << ':' << addr.port;
+        } catch (UnknownHost& e) {
+            LOG(ERROR) << e.what();
+        }
+    };
     if (_slot_updaters.empty()) {
-        throw BadClusterStatus("No nodes could be reached");
+        this->_update_slot_map_failed(std::move(addrs));
     }
 }
 
@@ -242,16 +281,24 @@ void Proxy::update_slot_map()
     _slot_map_expired = true;
 }
 
+void Proxy::update_remotes(std::set<util::Address> remotes)
+{
+    std::lock_guard<std::mutex> _(this->_candidate_addrs_mutex);
+    this->_candidate_addrs = std::move(remotes);
+    _slot_map_expired = true;
+}
+
 bool Proxy::_should_update_slot_map() const
 {
-    return _slot_updaters.empty() &&
-        (!_retrying_commands.empty() || _slot_map_expired);
+    return this->_slot_updaters.empty() &&
+        (!this->_retrying_commands.empty() || this->_slot_map_expired);
 }
 
 void Proxy::retry_move_ask_command_later(util::sref<DataCommand> cmd)
 {
-    _retrying_commands.push_back(cmd);
-    LOG(DEBUG) << "A MOVED or ASK added for later retry - " << _retrying_commands.size();
+    LOG(DEBUG) << "Retry later: " << cmd.id().str();
+    this->_retrying_commands.push_back(cmd);
+    LOG(DEBUG) << "A MOVED or ASK added for later retry - " << this->_retrying_commands.size();
 }
 
 void Proxy::run(int listen_port)

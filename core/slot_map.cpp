@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <algorithm>
+#include <stdexcept>
 
 #include "slot_map.hpp"
 #include "server.hpp"
@@ -12,9 +13,14 @@
 
 using namespace cerb;
 
+static void fillServers(SlotMap& m)
+{
+    std::fill(m.begin(), m.end(), nullptr);
+}
+
 SlotMap::SlotMap()
 {
-    std::fill(this->begin(), this->end(), nullptr);
+    fillServers(*this);
 }
 
 static std::function<std::set<Server*>(
@@ -49,6 +55,15 @@ static std::function<std::set<Server*>(
 std::set<Server*> SlotMap::replace_map(std::vector<RedisNode> const& nodes, Proxy* proxy)
 {
     return ::replace_map(this->_servers, nodes, proxy);
+}
+
+std::set<Server*> SlotMap::deliver()
+{
+    std::set<Server*> r;
+    std::for_each(this->begin(), this->end(), [&](Server* s) {r.insert(s);});
+    r.erase(nullptr);
+    fillServers(*this);
+    return std::move(r);
 }
 
 Server* SlotMap::random_addr() const
@@ -99,13 +114,17 @@ std::vector<RedisNode> cerb::parse_slot_map(std::string const& nodes_info,
         if (line_cont[2].find("fail") != std::string::npos) {
             continue;
         }
-        RedisNode node(parse_node(
-            std::move(line_cont[1]), std::move(line_cont[0]), std::move(line_cont[3]),
-            line_cont.begin() + 8, line_cont.end()));
-        if (node.addr.host.empty() && line_cont[2].find("myself") != std::string::npos) {
-            node.addr.host = default_host;
+        try {
+            RedisNode node(parse_node(
+                std::move(line_cont[1]), std::move(line_cont[0]), std::move(line_cont[3]),
+                line_cont.begin() + 8, line_cont.end()));
+            if (node.addr.host.empty() && line_cont[2].find("myself") != std::string::npos) {
+                node.addr.host = default_host;
+            }
+            slot_map.push_back(std::move(node));
+        } catch (std::runtime_error&) {
+            LOG(ERROR) << "Discard invalid line: " << line;
         }
-        slot_map.push_back(std::move(node));
     }
     return std::move(slot_map);
 }

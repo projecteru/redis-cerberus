@@ -389,3 +389,16 @@ TEST(SlotMap, ReplaceNodesAlsoSlave)
         ASSERT_EQ(7000, svr->addr.port) << " slot #" << s;
     }
 }
+
+TEST(SlotMap, NonsenseProof)
+{
+    cerb::SlotMap slot_map;
+    std::set<cerb::Server*> replaced = slot_map.replace_map(cerb::parse_slot_map(
+        "The quick brown fox jumps over a lazy dog.",
+        "127.0.0.1"), nullptr);
+    ASSERT_TRUE(replaced.empty());
+    replaced = slot_map.replace_map(cerb::parse_slot_map(
+        "6c001456aff0ae537ba242d4e86fb325c5babbea 192.168.1.100:7000 myself,master - 0 0 1 connected abc",
+        "127.0.0.1"), nullptr);
+    ASSERT_TRUE(replaced.empty());
+}

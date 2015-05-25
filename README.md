@@ -8,7 +8,7 @@ Requirements:
 * UNIX-like system with `SO_REUSEPORT | SO_REUSEADDR` support
 * `epoll` support
 * pthread
-* C++ compiler & lib with C++11 features, like g++ 4.8 or clang++ 3.2
+* C++ compiler & lib with C++11 features, like g++ 4.8 or clang++ 3.2 (NOTE: install clang++ 3.2 on CentOS 6.5 won't compile because clang uses header files from gcc, which is version 4.4 without C++11 support)
 * Google Test (for test)
 
 To build, just
@@ -61,9 +61,10 @@ Restricted Commands Bypass
 Extra Commands
 ---
 
-* `PROXY`: shows proxy information, including threads count, clients counts
+* `PROXY` / `INFO`: shows proxy information, including threads count, clients counts, commands statistics
 * `KEYSINSLOT slot count`: list keys in a specified slot, same as `CLUSTER GETKEYSINSLOT slot count`
 * `UPDATESLOTMAP`: notify each thread to update slot map after the next operation
+* `SETREMOTES host port host port ...`: reset redis server addresses to arguments, and update slot map after that
 
 Not Implemented
 ---
@@ -79,7 +80,7 @@ others: `PFADD`, `PFCOUNT`, `PFMERGE`,
 `WATCH`, `UNWATCH`, `EXEC`, `DISCARD`, `MULTI`,
 `SELECT`, `QUIT`, `ECHO`, `AUTH`,
 `CLUSTER`, `BGREWRITEAOF`, `BGSAVE`, `CLIENT`, `COMMAND`, `CONFIG`,
-`DBSIZE`, `DEBUG`, `FLUSHALL`, `FLUSHDB`, `INFO`, `LASTSAVE`, `MONITOR`,
+`DBSIZE`, `DEBUG`, `FLUSHALL`, `FLUSHDB`, `LASTSAVE`, `MONITOR`,
 `ROLE`, `SAVE`, `SHUTDOWN`, `SLAVEOF`, `SLOWLOG`, `SYNC`, `TIME`,
 
 For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/Redis-%E9%9B%86%E7%BE%A4%E4%BB%A3%E7%90%86%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E4%B8%8E%E4%BD%BF%E7%94%A8).

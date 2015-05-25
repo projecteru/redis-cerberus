@@ -1,6 +1,7 @@
 #ifndef __CERBERUS_PROXY_HPP__
 #define __CERBERUS_PROXY_HPP__
 
+#include <mutex>
 #include <vector>
 
 #include "utils/pointer.h"
@@ -60,6 +61,8 @@ namespace cerb {
         int _clients_count;
 
         SlotMap _server_map;
+        std::set<util::Address> _candidate_addrs;
+        std::mutex _candidate_addrs_mutex;
         std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
         std::vector<util::sptr<SlotsMapUpdater>> _finished_slot_updaters;
         int _active_slot_updaters_count;
@@ -74,7 +77,9 @@ namespace cerb {
 
         bool _should_update_slot_map() const;
         void _retrieve_slot_map();
+        void _close_servers(std::set<Server*> servers);
         void _set_slot_map(std::vector<RedisNode> map);
+        void _update_slot_map_failed(std::set<util::Address> addrs);
         void _update_slot_map();
         void _loop();
     public:
@@ -123,6 +128,7 @@ namespace cerb {
         Server* get_server_by_slot(slot key_slot);
         void notify_slot_map_updated();
         void update_slot_map();
+        void update_remotes(std::set<util::Address> remotes);
         void retry_move_ask_command_later(util::sref<DataCommand> cmd);
         void run(int listen_port);
         void accept_from(int listen_fd);

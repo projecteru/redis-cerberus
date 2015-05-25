@@ -310,13 +310,21 @@ namespace {
         }
     }
 
+    void notify_each_thread_update_remotes(std::set<util::Address> const& remotes)
+    {
+        for (auto& t: cerb_global::all_threads) {
+            t.get_proxy()->update_remotes(remotes);
+        }
+    }
+
     std::map<std::string, std::function<std::string()>> const QUICK_RSP({
         {"PING", []() {return "+PONG\r\n";}},
         {"PROXY", []() {return stats_string();}},
+        {"INFO", []() {return stats_string();}},
         {"UPDATESLOTMAP",
             []()
             {
-                notify_each_thread_update_slot_map();
+                ::notify_each_thread_update_slot_map();
                 return RSP_OK_STR;
             }},
     });
@@ -405,12 +413,67 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator)
         {
-            notify_each_thread_update_slot_map();
+            ::notify_each_thread_update_slot_map();
             return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
         }
 
         void on_byte(byte) {}
         void on_element(Buffer::iterator) {}
+    };
+
+    class SetRemotesCommandParser
+        : public SpecialCommandParser
+    {
+        std::set<util::Address> remotes;
+        std::string last_host;
+        int last_port;
+        bool current_is_host;
+        bool bad;
+    public:
+        SetRemotesCommandParser()
+            : last_port(0)
+            , current_is_host(true)
+            , bad(false)
+        {}
+
+        util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
+        {
+            if (this->bad) {
+                return util::mkptr(new DirectCommandGroup(
+                    c, "-ERR invalid port number\r\n"));
+            }
+            if (this->remotes.empty() || !this->current_is_host) {
+                return util::mkptr(new DirectCommandGroup(
+                    c, "-ERR wrong number of arguments for 'SETREMOTES' command\r\n"));
+            }
+            ::notify_each_thread_update_remotes(this->remotes);
+            return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
+        }
+
+        void on_byte(byte b)
+        {
+            if (this->bad) {
+                return;
+            }
+            if (this->current_is_host) {
+                this->last_host.push_back(b);
+            } else {
+                if (b < '0' || '9' < b) {
+                    bad = true;
+                    return;
+                }
+                this->last_port = this->last_port * 10 + b - '0';
+            }
+        }
+
+        void on_element(Buffer::iterator)
+        {
+            if (!this->current_is_host) {
+                this->remotes.insert(util::Address(std::move(this->last_host), this->last_port));
+                this->last_port = 0;
+            }
+            this->current_is_host = !this->current_is_host;
+        }
     };
 
     class EachKeyCommandParser
@@ -816,6 +879,11 @@ namespace {
             {
                 return util::mkptr(new PingCommandParser(arg_start));
             }},
+        {"INFO",
+            [](Buffer::iterator, Buffer::iterator)
+            {
+                return util::mkptr(new ProxyStatsCommandParser);
+            }},
         {"PROXY",
             [](Buffer::iterator, Buffer::iterator)
             {
@@ -825,6 +893,11 @@ namespace {
             [](Buffer::iterator, Buffer::iterator)
             {
                 return util::mkptr(new UpdateSlotMapCommandParser);
+            }},
+        {"SETREMOTES",
+            [](Buffer::iterator, Buffer::iterator)
+            {
+                return util::mkptr(new SetRemotesCommandParser);
             }},
         {"MGET",
             [](Buffer::iterator, Buffer::iterator arg_start)

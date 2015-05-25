@@ -81,6 +81,7 @@ namespace cerb {
         }
 
         std::set<Server*> replace_map(std::vector<RedisNode> const& nodes, Proxy* proxy);
+        std::set<Server*> deliver();
         Server* random_addr() const;
 
         static void select_slave_if_possible();
