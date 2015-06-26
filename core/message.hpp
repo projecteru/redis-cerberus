@@ -7,8 +7,8 @@
 #include <stack>
 #include <iterator>
 
-#include "exceptions.hpp"
 #include "common.hpp"
+#include "except/exceptions.hpp"
 
 namespace cerb { namespace msg {
 
@@ -352,6 +352,8 @@ namespace cerb { namespace msg {
     {
         return split_by(begin, end, MessageSplitter<InputIterator>(begin));
     }
+
+    std::string format_command(std::string command, std::vector<std::string> const& args);
 
 } }
 

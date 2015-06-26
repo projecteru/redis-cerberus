@@ -1,4 +1,3 @@
-#include <unistd.h>
 #include <algorithm>
 #include <stdexcept>
 
@@ -6,7 +5,7 @@
 #include "server.hpp"
 #include "fdutil.hpp"
 #include "proxy.hpp"
-#include "exceptions.hpp"
+#include "buffer.hpp"
 #include "utils/random.hpp"
 #include "utils/logging.hpp"
 #include "utils/string.h"
@@ -36,6 +35,7 @@ static std::function<std::set<Server*>(
                 continue;
             }
             Server* server = Server::get_server(node.addr, proxy);
+            LOG(DEBUG) << "Get " << server->fd << " for " << node.addr.str();
             for (auto const& rg: node.slot_ranges) {
                 for (slot s = rg.first; s <= rg.second; ++s) {
                     removed.insert(servers[s]);
@@ -52,18 +52,22 @@ static std::function<std::set<Server*>(
         return std::move(r);
     });
 
-std::set<Server*> SlotMap::replace_map(std::vector<RedisNode> const& nodes, Proxy* proxy)
+void SlotMap::replace_map(std::vector<RedisNode> const& nodes, Proxy* proxy)
 {
-    return ::replace_map(this->_servers, nodes, proxy);
+    for (Server* s: ::replace_map(this->_servers, nodes, proxy)) {
+        s->close_conn();
+    }
 }
 
-std::set<Server*> SlotMap::deliver()
+void SlotMap::clear()
 {
     std::set<Server*> r;
     std::for_each(this->begin(), this->end(), [&](Server* s) {r.insert(s);});
     r.erase(nullptr);
+    for (Server* s: r) {
+        s->close_conn();
+    }
     fillServers(*this);
-    return std::move(r);
 }
 
 Server* SlotMap::random_addr() const
@@ -129,13 +133,11 @@ std::vector<RedisNode> cerb::parse_slot_map(std::string const& nodes_info,
     return std::move(slot_map);
 }
 
-static std::string const CLUSTER_NODES_CMD("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
+static cerb::Buffer const CLUSTER_NODES_CMD(Buffer::from_string("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n"));
 
 void cerb::write_slot_map_cmd_to(int fd)
 {
-    if (-1 == ::write(fd, CLUSTER_NODES_CMD.c_str(), CLUSTER_NODES_CMD.size())) {
-        throw IOError("Fetch cluster nodes info", errno);
-    }
+    CLUSTER_NODES_CMD.write(fd);
 }
 
 void SlotMap::select_slave_if_possible()
@@ -161,7 +163,7 @@ void SlotMap::select_slave_if_possible()
                         slave_i == slave_of_map.end() ? node.addr
                                                       : slave_i->second->addr,
                         proxy);
-                LOG(DEBUG) << "Select " << server->addr.host << ':' << server->addr.port << " for " << node.addr.host << ':' << node.addr.port;
+                LOG(DEBUG) << "Select " << server->addr.str() << " for " << node.addr.str();
                 for (auto const& rg: node.slot_ranges) {
                     for (slot s = rg.first; s <= rg.second; ++s) {
                         removed.insert(servers[s]);

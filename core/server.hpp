@@ -20,6 +20,7 @@ namespace cerb {
     {
         Proxy* _proxy;
         Buffer _buffer;
+        BufferSet _output_buffer_set;
 
         std::vector<util::sref<DataCommand>> _commands;
         std::vector<util::sref<DataCommand>> _ready_commands;
@@ -27,6 +28,7 @@ namespace cerb {
         void _send_to();
         void _recv_from();
         void _reconnect(util::Address const& addr, Proxy* p);
+        void _send_buffer_set();
 
         Server()
             : ProxyConnection(-1)
@@ -43,13 +45,18 @@ namespace cerb {
 
         static void send_readonly_for_each_conn();
         static Server* get_server(util::Address addr, Proxy* p);
-        static void close_server(Server* server);
         static std::map<util::Address, Server*>::iterator addr_begin();
         static std::map<util::Address, Server*>::iterator addr_end();
 
         void on_events(int events);
         void after_events(std::set<Connection*>&);
 
+        void on_error()
+        {
+            this->close_conn();
+        }
+
+        void close_conn();
         void push_client_command(util::sref<DataCommand> cmd);
         void pop_client(Client* cli);
         std::vector<util::sref<DataCommand>> deliver_commands();

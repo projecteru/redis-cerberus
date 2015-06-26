@@ -13,3 +13,8 @@ Address Address::from_host_port(std::string const& addr)
     }
     return Address(host_port[0], util::atoi(host_port[1].data()));
 }
+
+std::string Address::str() const
+{
+    return this->host + ':' + util::str(this->port);
+}

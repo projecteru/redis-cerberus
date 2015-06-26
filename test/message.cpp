@@ -306,3 +306,13 @@ TEST(Message, InterruptedMessage)
         ASSERT_EQ(t.begin() + f.size(), bms.interrupt_point());
     }
 }
+
+TEST(Message, FormatMessage)
+{
+    ASSERT_EQ("*1\r\n$4\r\nPONG\r\n", cerb::msg::format_command("PONG", {}));
+    ASSERT_EQ("*2\r\n$3\r\nGET\r\n$1\r\na\r\n", cerb::msg::format_command("GET", {"a"}));
+    ASSERT_EQ("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$2\r\nbc\r\n",
+              cerb::msg::format_command("SET", {"a", "bc"}));
+    ASSERT_EQ("*4\r\n$4\r\nMGET\r\n$1\r\na\r\n$2\r\nbc\r\n$4\r\ndefg\r\n",
+              cerb::msg::format_command("MGET", {"a", "bc", "defg"}));
+}

@@ -1,4 +1,5 @@
 #include "core/stats.hpp"
+#include "core/globals.hpp"
 
 using namespace cerb;
 

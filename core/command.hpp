@@ -80,7 +80,7 @@ namespace cerb {
         virtual void deliver_client(Proxy*) {}
         virtual bool wait_remote() const = 0;
         virtual void select_remote(Proxy* proxy) = 0;
-        virtual void append_buffer_to(std::vector<util::sref<Buffer>>& b) = 0;
+        virtual void append_buffer_to(BufferSet& b) = 0;
         virtual int total_buffer_size() const = 0;
         virtual void command_responsed() = 0;
         virtual void collect_stats(Proxy*) const {}

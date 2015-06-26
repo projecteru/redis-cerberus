@@ -2,10 +2,12 @@
 #define __CERBERUS_BUFFER_HPP__
 
 #include <vector>
+#include <deque>
 #include <string>
 
 #include "stats.hpp"
 #include "utils/pointer.h"
+#include "syscalls/cio.h"
 
 namespace cerb {
 
@@ -73,16 +75,42 @@ namespace cerb {
             _buffer.clear();
         }
 
+        void* data()
+        {
+            return this->_buffer.data();
+        }
+
         int read(int fd);
         int write(int fd) const;
         void truncate_from_begin(iterator i);
-        void buffer_ready(std::vector<struct iovec>& iov);
+        void buffer_ready(std::vector<cio::iovec>& iov);
         void copy_from(const_iterator first, const_iterator last);
         void append_from(const_iterator first, const_iterator last);
         std::string to_string() const;
         bool same_as_string(std::string const& s) const;
+    };
 
-        static void writev(int fd, std::vector<util::sref<Buffer>> const& arr);
+    class BufferSet {
+        std::deque<util::sref<Buffer>> _buf_arr;
+        int _1st_buf_offset;
+    public:
+        BufferSet(BufferSet const&) = delete;
+
+        BufferSet()
+            : _1st_buf_offset(0)
+        {}
+
+        void append(util::sref<Buffer> buf)
+        {
+            this->_buf_arr.push_back(buf);
+        }
+
+        bool empty() const
+        {
+            return this->_buf_arr.empty();
+        }
+
+        bool writev(int fd);
     };
 
 }

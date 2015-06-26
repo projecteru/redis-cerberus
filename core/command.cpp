@@ -3,7 +3,6 @@
 
 #include "message.hpp"
 #include "command.hpp"
-#include "exceptions.hpp"
 #include "proxy.hpp"
 #include "client.hpp"
 #include "server.hpp"
@@ -11,6 +10,7 @@
 #include "stats.hpp"
 #include "slot_calc.hpp"
 #include "globals.hpp"
+#include "except/exceptions.hpp"
 #include "utils/logging.hpp"
 #include "utils/random.hpp"
 #include "utils/string.h"
@@ -26,7 +26,7 @@ namespace {
     {
         Server* svr = proxy->get_server_by_slot(key_slot);
         if (svr == nullptr) {
-            LOG(ERROR) << "Cluster slot not covered " << key_slot;
+            LOG(DEBUG) << "Cluster slot not covered " << key_slot;
             proxy->retry_move_ask_command_later(util::mkref(*cmd));
             return nullptr;
         }
@@ -116,9 +116,9 @@ namespace {
 
         void select_remote(Proxy*) {}
 
-        void append_buffer_to(std::vector<util::sref<Buffer>>& b)
+        void append_buffer_to(BufferSet& b)
         {
-            b.push_back(util::mkref(command->buffer));
+            b.append(util::mkref(command->buffer));
         }
 
         int total_buffer_size() const
@@ -178,9 +178,9 @@ namespace {
             this->complete = true;
         }
 
-        void append_buffer_to(std::vector<util::sref<Buffer>>& b)
+        void append_buffer_to(BufferSet& b)
         {
-            b.push_back(util::mkref(command->buffer));
+            b.append(util::mkref(command->buffer));
         }
 
         int total_buffer_size() const
@@ -231,11 +231,11 @@ namespace {
             }
         }
 
-        void append_buffer_to(std::vector<util::sref<Buffer>>& b)
+        void append_buffer_to(BufferSet& b)
         {
-            b.push_back(util::mkref(arr_payload));
+            b.append(util::mkref(arr_payload));
             for (auto const& c: this->commands) {
-                b.push_back(util::mkref(c->buffer));
+                b.append(util::mkref(c->buffer));
             }
         }
 
@@ -293,7 +293,7 @@ namespace {
         }
 
         void select_remote(Proxy*) {}
-        void append_buffer_to(std::vector<util::sref<Buffer>>&) {}
+        void append_buffer_to(BufferSet&) {}
         void command_responsed() {}
     };
 
@@ -307,13 +307,6 @@ namespace {
     {
         for (auto& t: cerb_global::all_threads) {
             t.get_proxy()->update_slot_map();
-        }
-    }
-
-    void notify_each_thread_update_remotes(std::set<util::Address> const& remotes)
-    {
-        for (auto& t: cerb_global::all_threads) {
-            t.get_proxy()->update_remotes(remotes);
         }
     }
 
@@ -410,8 +403,7 @@ namespace {
     public:
         UpdateSlotMapCommandParser() = default;
 
-        util::sptr<CommandGroup> spawn_commands(
-            util::sref<Client> c, Buffer::iterator)
+        util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
         {
             ::notify_each_thread_update_slot_map();
             return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
@@ -446,7 +438,8 @@ namespace {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'SETREMOTES' command\r\n"));
             }
-            ::notify_each_thread_update_remotes(this->remotes);
+            cerb_global::set_remotes(std::move(this->remotes));
+            ::notify_each_thread_update_slot_map();
             return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
         }
 
@@ -559,9 +552,9 @@ namespace {
                 : MultipleCommandsGroup(c)
             {}
 
-            void append_buffer_to(std::vector<util::sref<Buffer>>& b)
+            void append_buffer_to(BufferSet& b)
             {
-                b.push_back(util::mkref(RSP_OK));
+                b.append(util::mkref(RSP_OK));
             }
 
             int total_buffer_size() const

@@ -9,6 +9,7 @@
 #include "core/command.hpp"
 #include "core/server.hpp"
 #include "utils/logging.hpp"
+#include "utils/address.hpp"
 #include "utils/string.h"
 #include "backtracpp/sig-handler.h"
 
@@ -39,6 +40,11 @@ namespace {
                 config[kv[0]] = kv[1];
             }
             _config = std::move(config);
+        }
+
+        bool contains(std::string const& k) const
+        {
+            return _config.find(k) != _config.end();
         }
 
         std::string const& get(std::string const& k) const
@@ -84,9 +90,16 @@ namespace {
             LOG(ERROR) << "Invalid thread count";
             exit(1);
         }
+
+        if (config.contains("node")) {
+            cerb_global::set_remotes({util::Address::from_host_port(config.get("node"))});
+        } else {
+            LOG(WARNING) << "Remote is not set in config file; to set it by command,"
+                            " use `SETREMOTES <host> <port>' in a redis-cli prompt";
+        }
+
         for (int i = 0; i < thread_count; ++i) {
-            cerb_global::all_threads.push_back(
-                cerb::ListenThread(bind_port, config.get("node")));
+            cerb_global::all_threads.push_back(cerb::ListenThread(bind_port));
         }
         for (auto& t: cerb_global::all_threads) {
             t.run();

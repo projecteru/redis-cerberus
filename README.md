@@ -43,7 +43,7 @@ Run
 The argument is path of a configuration file, which should contains at least
 
 * bind : (integer) local port to listen
-* node : (address) one of active node in a cluster; format should be host:port
+* node : (address, optional) one of active node in a cluster; format should be *host:port*; could also set after cerberus launched, via the `SETREMOTES` command, see it below
 * thread: (integer) number of threads
 * read-slave: (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible.  For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB).
 

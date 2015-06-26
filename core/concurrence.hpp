@@ -15,7 +15,7 @@ namespace cerb {
         util::sptr<std::thread> _thread;
         msize_t const* _mem_buffer_stat;
     public:
-        ListenThread(int listen_port, std::string const& remote);
+        explicit ListenThread(int listen_port);
         ListenThread(ListenThread const&) = delete;
 
         ListenThread(ListenThread&& rhs)

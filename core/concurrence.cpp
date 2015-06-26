@@ -1,13 +1,14 @@
 #include "concurrence.hpp"
 #include "globals.hpp"
-#include "exceptions.hpp"
+#include "except/exceptions.hpp"
 #include "utils/logging.hpp"
+#include "acceptor.hpp"
 
 using namespace cerb;
 
-ListenThread::ListenThread(int listen_port, std::string const& remote)
+ListenThread::ListenThread(int listen_port)
     : _listen_port(listen_port)
-    , _proxy(new Proxy(util::Address::from_host_port(remote)))
+    , _proxy(new Proxy)
     , _thread(nullptr)
     , _mem_buffer_stat(nullptr)
 {}
@@ -15,11 +16,16 @@ ListenThread::ListenThread(int listen_port, std::string const& remote)
 void ListenThread::run()
 {
     this->_thread.reset(new std::thread(
-        [=]()
+        [this]()
         {
             _mem_buffer_stat = &cerb_global::allocated_buffer;
             try {
-                this->_proxy->run(this->_listen_port);
+                cerb::Acceptor acc(*this->_proxy, this->_listen_port);
+                poll::pevent events[poll::MAX_EVENTS];
+                while (true) {
+                    int nfds = poll::poll_wait(this->_proxy->epfd, events, poll::MAX_EVENTS, -1);
+                    this->_proxy->handle_events(events, nfds);
+                }
             } catch (SystemError& e) {
                 LOG(ERROR) << "Unexpected error";
                 LOG(ERROR) << e.stack_trace;

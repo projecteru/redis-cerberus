@@ -1,9 +1,8 @@
-#include <sys/epoll.h>
-
 #include "subscription.hpp"
 #include "server.hpp"
-#include "exceptions.hpp"
 #include "utils/logging.hpp"
+#include "syscalls/poll.h"
+#include "syscalls/fctl.h"
 
 using namespace cerb;
 
@@ -13,18 +12,8 @@ Subscription::Subscription(Proxy* p, int clientfd, Server* peer, Buffer subs_cmd
     , _peer(peer)
 {
     _peer->attach_long_connection(this);
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLET;
-
-    ev.data.ptr = &_server;
-    if (epoll_ctl(p->epfd, EPOLL_CTL_ADD, _server.fd, &ev) == -1) {
-        throw SystemError("epoll_ctl+addi subscribe server", errno);
-    }
-    ev.data.ptr = this;
-    if (epoll_ctl(p->epfd, EPOLL_CTL_ADD, this->fd, &ev) == -1) {
-        throw SystemError("epoll_ctl+addi subscribe client", errno);
-    }
-
+    poll::poll_add_read(p->epfd, this->_server.fd, &this->_server);
+    poll::poll_add_read(p->epfd, this->fd, this);
     LOG(DEBUG) << "Start subscription from " << peer->addr.host << ':' << peer->addr.port
                << " (FD=" << _server.fd << ") to client (FD=" << this->fd
                << ") by " << this;
@@ -37,17 +26,17 @@ Subscription::~Subscription()
 
 void Subscription::on_events(int events)
 {
-    if (events & EPOLLRDHUP) {
+    if (poll::event_is_hup(events)) {
         return this->on_error();
     }
-    if (events & EPOLLIN) {
+    if (poll::event_is_read(events)) {
         Buffer b;
         if (b.read(fd) == 0) {
             LOG(DEBUG) << "Client quit because read 0 bytes";
             return this->on_error();
         }
     }
-    if (events & EPOLLOUT) {
+    if (poll::event_is_write(events)) {
         LOG(DEBUG) << "UNEXPECTED";
         this->on_error();
     }
@@ -63,20 +52,20 @@ void Subscription::after_events(std::set<Connection*>& active_conns)
 
 Subscription::ServerConn::ServerConn(util::Address const& addr,
                                      Buffer subs_cmd, Subscription* peer)
-    : ProxyConnection(new_stream_socket())
+    : ProxyConnection(fctl::new_stream_socket())
     , _peer(peer)
 {
-    set_nonblocking(this->fd);
-    connect_fd(addr.host, addr.port, this->fd);
+    fctl::set_nonblocking(this->fd);
+    fctl::connect_fd(addr.host, addr.port, this->fd);
     subs_cmd.write(this->fd);
 }
 
 void Subscription::ServerConn::on_events(int events)
 {
-    if (events & EPOLLRDHUP) {
+    if (poll::event_is_hup(events)) {
         return this->on_error();
     }
-    if (events & EPOLLIN) {
+    if (poll::event_is_read(events)) {
         Buffer b;
         if (b.read(this->fd) == 0) {
             LOG(ERROR) << "Server closed subscription connection " << this->fd;
@@ -84,7 +73,7 @@ void Subscription::ServerConn::on_events(int events)
         }
         b.write(this->_peer->fd);
     }
-    if (events & EPOLLOUT) {
+    if (poll::event_is_write(events)) {
         LOG(DEBUG) << "UNEXPECTED";
         this->on_error();
     }

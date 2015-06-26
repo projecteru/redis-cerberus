@@ -35,16 +35,18 @@ namespace util {
 
         bool operator==(Address const& rhs) const
         {
-            return host == rhs.host && port == rhs.port;
+            return this->host == rhs.host && this->port == rhs.port;
         }
 
         bool operator<(Address const& rhs) const
         {
-            if (host == rhs.host) {
-                return port < rhs.port;
+            if (this->host == rhs.host) {
+                return this->port < rhs.port;
             }
-            return host < rhs.host;
+            return this->host < rhs.host;
         }
+
+        std::string str() const;
     };
 
 }

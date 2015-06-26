@@ -24,16 +24,13 @@ namespace cerb {
         std::vector<util::sptr<CommandGroup>> _ready_groups;
         int _awaiting_count;
         Buffer _buffer;
+        BufferSet _output_buffer_set;
 
         void _process();
+        void _send_buffer_set();
         void _response_ready();
     public:
-        Client(int fd, Proxy* p)
-            : ProxyConnection(fd)
-            , _proxy(p)
-            , _awaiting_count(0)
-        {}
-
+        Client(int fd, Proxy* p);
         ~Client();
 
         void on_events(int events);

@@ -1,10 +1,6 @@
 #ifndef __CERBERUS_FILE_DESCRIPTER_UTILITY_HPP__
 #define __CERBERUS_FILE_DESCRIPTER_UTILITY_HPP__
 
-#include <string>
-
-struct iovec;
-
 namespace cerb {
 
     class FDWrapper {
@@ -22,12 +18,6 @@ namespace cerb {
         bool closed() const;
         void close();
     };
-
-    int new_stream_socket();
-    int set_tcpnodelay(int sockfd);
-    void set_nonblocking(int sockfd);
-    void connect_fd(std::string const& host, int port, int fd);
-    void bind_to(int fd, int port);
 
 }
 

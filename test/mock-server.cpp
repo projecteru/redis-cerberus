@@ -1,6 +1,6 @@
 #include <functional>
 
-#include "core/server.hpp"
+#include "mock-server.hpp"
 
 using namespace cerb;
 
@@ -46,13 +46,38 @@ namespace {
 
 }
 
+static std::set<Server*> created;
+static std::set<Server*> closed;
+
+std::set<Server*> const& created_servers()
+{
+    return ::created;
+}
+
+std::set<Server*> const& closed_servers()
+{
+    return ::closed;
+}
+
+void clear_all_servers()
+{
+    ::created.clear();
+    ::closed.clear();
+}
+
 Server* Server::get_server(util::Address addr, Proxy*)
 {
     static ServerManager server_manager([](Server* s) { delete s; });
     Server* s = server_manager.get(addr, []() { return new Server; });
     s->addr = addr;
+    ::created.insert(s);
     return s;
 }
 
 void Server::on_events(int) {}
 void Server::after_events(std::set<Connection*>&) {}
+
+void Server::close_conn()
+{
+    ::closed.insert(this);
+}
