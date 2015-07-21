@@ -1,5 +1,3 @@
-#include <gtest/gtest.h>
-
 #include "utils/string.h"
 #include "core/server.hpp"
 #include "core/message.hpp"

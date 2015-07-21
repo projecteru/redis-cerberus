@@ -58,9 +58,10 @@ server-client-test:server-client.dt mock-proxy.dt mock-suit
 	  -o $(TESTDIR)/test-server-client.out
 	$(VALGRIND) $(TESTDIR)/test-server-client.out
 
-event-loop-test:event-loop-test.dt event-loop-data-proxy.dt mock-suit
+event-loop-test:event-loop-test.dt mock-suit event-loop-data-proxy.dt \
+                event-loop-long-conn.dt
 	$(LINK) $(TESTDIR)/event-loop-test.o $(TESTDIR)/event-loop-data-proxy.o \
-	     utils/*.o $(MOCK_OBJS) \
+	     $(TESTDIR)/event-loop-long-conn.o utils/*.o $(MOCK_OBJS) \
 	     $(OBJDIR)/connection.o $(OBJDIR)/server.o $(OBJDIR)/client.o \
 	     $(OBJDIR)/fdutil.o $(OBJDIR)/response.o $(OBJDIR)/command.o \
 	     $(OBJDIR)/subscription.o $(OBJDIR)/message.o $(OBJDIR)/globals.o \

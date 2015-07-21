@@ -8,6 +8,8 @@
 
 using namespace cerb;
 
+Buffer const Response::NIL(Buffer::from_string("$-1\r\n"));
+
 namespace {
 
     class NormalResponse
@@ -27,7 +29,7 @@ namespace {
             cmd->on_remote_responsed(std::move(this->rsp), error);
         }
 
-        Buffer const& dump_buffer() const
+        Buffer const& get_buffer() const
         {
             return rsp;
         }
@@ -43,9 +45,14 @@ namespace {
             p->retry_move_ask_command_later(cmd);
         }
 
-        Buffer const& dump_buffer() const
+        Buffer const& get_buffer() const
         {
             return dump;
+        }
+
+        bool server_moved() const
+        {
+            return true;
         }
     };
     Buffer const RetryMovedAskResponse::dump(

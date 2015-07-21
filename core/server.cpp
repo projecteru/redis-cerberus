@@ -49,7 +49,7 @@ void Server::_send_to()
         return this->_send_buffer_set();
     }
     if (this->_commands.empty()) {
-        return;
+        return poll::poll_read(_proxy->epfd, this->fd, this);
     }
     if (!this->_ready_commands.empty()) {
         LOG(DEBUG) << "+busy";
@@ -80,7 +80,7 @@ void Server::_recv_from()
         LOG(ERROR) << "+Error on split, expected size: " << this->_ready_commands.size()
                    << " actual: " << responses.size() << " dump buffer:";
         for (util::sptr<Response> const& rsp: responses) {
-            LOG(ERROR) << "::: " << rsp->dump_buffer().to_string();
+            LOG(ERROR) << "::: " << rsp->get_buffer().to_string();
         }
         LOG(ERROR) << "Rest buffer: " << this->_buffer.to_string();
         LOG(FATAL) << "Exit";

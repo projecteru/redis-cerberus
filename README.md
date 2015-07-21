@@ -57,6 +57,7 @@ Restricted Commands Bypass
 * `MSET` : execute multiple SETs
 * `DEL` : execute multiple DELs
 * `RENAME` : if source and destination are not in the same slot, execute a GET-SET-DEL sequence
+* `BLPOP` / `BRPOP`: one list limited; might return nil value before timeout [See detail (CN)](https://github.com/HunanTV/redis-cerberus/wiki/BLPOP-And-BRPOP)
 
 Extra Commands
 ---
@@ -70,7 +71,7 @@ Not Implemented
 ---
 
 * keys: `KEYS`, `MIGRATE`, `MOVE`, `OBJECT`, `RANDOMKEY`, `RENAMENX`, `SCAN`, `BITOP`,
-* list: `BLPOP`, `BRPOP`, `BRPOPLPUSH`, `RPOPLPUSH`,
+* list: `BRPOPLPUSH`, `RPOPLPUSH`,
 * set: `SINTERSTORE`, `SDIFFSTORE`, `SINTER`, `SMOVE`, `SUNIONSTORE`,
 * sorted set: `ZINTERSTORE`, `ZUNIONSTORE`,
 * pub/sub: `PUBSUB`, `PUNSUBSCRIBE`, `UNSUBSCRIBE`,

@@ -82,7 +82,7 @@ void EventLoopTest::TearDown()
         conns.insert(static_cast<cerb::Connection*>(i.second));
     }
     for (cerb::Connection* c: conns) {
-        c->close();
+        c->on_error();
     }
     for (cerb::Connection* c: conns) {
         c->after_events(conns);

@@ -49,7 +49,7 @@ void SlotsMapUpdater::_recv_rsp()
     LOG(DEBUG) << "*Updated from " << this->fd << " in " << this;
     this->close();
     _proxy->notify_slot_map_updated(
-        parse_slot_map(rsp[0]->dump_buffer().to_string(), this->addr.host));
+        parse_slot_map(rsp[0]->get_buffer().to_string(), this->addr.host));
 }
 
 void SlotsMapUpdater::on_events(int events)
@@ -103,6 +103,7 @@ void Proxy::_set_slot_map(std::vector<RedisNode> map, std::set<util::Address> re
     _server_map.replace_map(map, this);
     _slot_map_expired = false;
     cerb_global::set_remotes(std::move(remotes));
+    LOG(INFO) << "Slot map updated";
     if (this->_retrying_commands.empty()) {
         return;
     }
@@ -155,10 +156,9 @@ void Proxy::_retrieve_slot_map()
             this->_slot_updaters.push_back(
                 util::mkptr(new SlotsMapUpdater(addr, this)));
         } catch (ConnectionRefused& e) {
-            LOG(INFO) << e.what();
-            LOG(INFO) << "Disconnected: " << addr.str();
+            LOG(INFO) << "Disconnect " << addr.str() << " for " << e.what();
         } catch (UnknownHost& e) {
-            LOG(ERROR) << e.what();
+            LOG(ERROR) << "Disconnect " << addr.str() << " for " << e.what();
         }
     };
     if (_slot_updaters.empty()) {

@@ -781,6 +781,68 @@ namespace {
         }
     };
 
+    class BlockedListPopParser
+        : public SpecialCommandParser
+    {
+        class BlockedPop
+            : public LongCommandGroup
+        {
+            Buffer buffer;
+            slot key_slot;
+        public:
+            BlockedPop(util::sref<Client> client, Buffer b, slot s)
+                : LongCommandGroup(client)
+                , buffer(std::move(b))
+                , key_slot(s)
+            {}
+
+            void deliver_client(Proxy* p)
+            {
+                Server* s = p->get_server_by_slot(this->key_slot);
+                if (s == nullptr) {
+                    return this->client->close();
+                }
+                new BlockedListPop(p, this->client->fd, s, std::move(buffer));
+                LOG(DEBUG) << "Deliver " << client.id().str() << "'s FD "
+                           << this->client->fd << " as blocked pop client";
+                this->client->fd = -1;
+            }
+        };
+
+        Buffer::iterator begin;
+        KeySlotCalc slot_calc;
+        std::function<void(byte)> key_calc;
+        int args_count;
+    public:
+        void on_byte(byte b)
+        {
+            this->key_calc(b);
+        }
+
+        void on_element(Buffer::iterator)
+        {
+            this->key_calc = [](byte) {};
+            ++this->args_count;
+        }
+
+        explicit BlockedListPopParser(Buffer::iterator begin)
+            : begin(begin)
+            , key_calc([this](byte b) {this->slot_calc.next_byte(b);})
+            , args_count(0)
+        {}
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator end)
+        {
+            if (args_count != 2) {
+                return util::mkptr(new DirectCommandGroup(
+                    c, "-ERR BLPOP/BRPOP takes exactly 2 argument KEY TIMEOUT in proxy\r\n"));
+            }
+            return util::mkptr(new BlockedPop(c, Buffer(this->begin, end),
+                                              this->slot_calc.get_slot()));
+        }
+    };
+
     class PublishCommandParser
         : public SpecialCommandParser
     {
@@ -1170,6 +1232,16 @@ void Command::allow_write_commands()
             [](Buffer::iterator, Buffer::iterator arg_start)
             {
                 return util::mkptr(new KeysInSlotParser(arg_start));
+            }},
+        {"BLPOP",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new BlockedListPopParser(command_begin));
+            }},
+        {"BRPOP",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new BlockedListPopParser(command_begin));
             }},
     });
     for (auto const& c: SPECIAL_WRITE_COMMAND) {

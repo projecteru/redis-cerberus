@@ -18,7 +18,10 @@ namespace cerb {
         Response(Response const&) = delete;
 
         virtual void rsp_to(util::sref<DataCommand> c, util::sref<Proxy> p) = 0;
-        virtual Buffer const& dump_buffer() const = 0;
+        virtual Buffer const& get_buffer() const = 0;
+        virtual bool server_moved() const { return false; }
+
+        static Buffer const NIL;
     };
 
     std::vector<util::sptr<Response>> split_server_response(Buffer& buffer);

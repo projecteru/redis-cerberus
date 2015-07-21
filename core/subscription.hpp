@@ -7,8 +7,20 @@ namespace cerb {
 
     class Server;
 
-    class Subscription
+    class LongConnection
         : public ProxyConnection
+    {
+    protected:
+        util::sref<Server> const _attached_server;
+    public:
+        LongConnection(int clientfd, Server* svr);
+        ~LongConnection();
+
+        void on_events(int events);
+    };
+
+    class Subscription
+        : public LongConnection
     {
         class ServerConn
             : public ProxyConnection
@@ -23,13 +35,35 @@ namespace cerb {
         };
 
         ServerConn _server;
-        Server* const _peer;
     public:
         Subscription(Proxy* proxy, int clientfd, Server* peer, Buffer subs_cmd);
-        ~Subscription();
 
-        void on_events(int events);
         void after_events(std::set<Connection*>& active_conns);
+    };
+
+    class BlockedListPop
+        : public LongConnection
+    {
+        class ServerConn
+            : public ProxyConnection
+        {
+            BlockedListPop* const _peer;
+            Buffer _buffer;
+        public:
+            ServerConn(util::Address const& addr, Buffer cmd, BlockedListPop* peer);
+
+            void on_events(int events);
+            void on_error();
+            void after_events(std::set<Connection*>& active_conns);
+        };
+
+        ServerConn _server;
+        Proxy* const _proxy;
+    public:
+        BlockedListPop(Proxy* proxy, int clientfd, Server* peer, Buffer cmd);
+
+        void after_events(std::set<Connection*>& active_conns);
+        void restore_client(Buffer const& rsp, bool update_slot_map);
     };
 
 }
