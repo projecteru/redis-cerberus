@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <csignal>
 #include <map>
 #include <algorithm>
@@ -17,13 +18,37 @@ namespace {
 
     class Configuration {
         std::map<std::string, std::string> _config;
-    public:
-        Configuration(char const* file)
+
+        void _parse_opt(int argc, char* argv[])
         {
-            std::map<std::string, std::string> config;
-            std::ifstream conf_file(file);
+            int ch;
+            opterr = 0;
+            while ((ch = getopt(argc, argv, "b:n:t:r:")) != EOF) {
+                switch (ch) {
+                case 'b':
+                    _config["bind"] = optarg;
+                    break;
+                case 'n':
+                    _config["node"] = optarg;
+                    break;
+                case 't':
+                    _config["thread"] = optarg;
+                    break;
+                case 'r':
+                    _config["read-slave"] = optarg;
+                    break;
+                default:
+                    std::cerr << "Invalid option." << std::endl;
+                    exit(1);
+                }
+            }
+        }
+    public:
+        Configuration(int argc, char* argv[])
+        {
+            std::ifstream conf_file(argv[0]);
             if (!conf_file.good()) {
-                std::cerr << "Fail to read config file " << file << std::endl;
+                std::cerr << "Fail to read config file " << argv[0] << std::endl;
                 exit(1);
             }
             std::string line;
@@ -37,9 +62,9 @@ namespace {
                     std::cerr << "Invalid configure line " << line << std::endl;
                     exit(1);
                 }
-                config[kv[0]] = kv[1];
+                _config[kv[0]] = kv[1];
             }
-            _config = std::move(config);
+            _parse_opt(argc, argv);
         }
 
         bool contains(std::string const& k) const
@@ -119,10 +144,18 @@ int main(int argc, char* argv[])
                  " Copyright (c) HunanTV Platform developers" << std::endl;
     if (argc == 1) {
         std::cerr << "Usage:" << std::endl;
-        std::cerr << "    cerberus CONFIG_FILE" << std::endl;
+        std::cerr << "    cerberus CONFIG_FILE [ARGS]" << std::endl;
+        std::cerr << "  where ARGS could be" << std::endl;
+        std::cerr << "    -b PORT : port number for listening" << std::endl;
+        std::cerr << "    -n NODE : initial redis node" << std::endl;
+        std::cerr << "    -t THREAD : thread count" << std::endl;
+        std::cerr << "    -r READONLY : if the proxy is readonly,"
+                           " value shall be 0 or 1 for false or true" << std::endl;
+        std::cerr << "  Options passed by command line will override"
+                         " those in the config file" << std::endl;
         return 1;
     }
-    Configuration config(argv[1]);
+    Configuration config(argc - 1, argv + 1);
 
     signal(SIGINT, exit_on_int);
     logging::init();

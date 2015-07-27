@@ -38,14 +38,20 @@ run test with valgrind checking
 Run
 ===
 
-    ./cerberus example.conf
+    cerberus CONFIG_FILE [ARGS]
 
-The argument is path of a configuration file, which should contains at least
+The first argument is path of a configuration file, then optional arguments. Those specifies
 
-* bind : (integer) local port to listen
-* node : (address, optional) one of active node in a cluster; format should be *host:port*; could also set after cerberus launched, via the `SETREMOTES` command, see it below
-* thread: (integer) number of threads
-* read-slave: (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible.  For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB).
+* bind / `-b` : (integer) local port to listen; could also specified
+* node / `-n` : (address, optional) one of active node in a cluster; format should be *host:port*; could also set after cerberus launched, via the `SETREMOTES` command, see it below
+* thread / `-t` : (integer) number of threads
+* read-slave / `r` : (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible.  For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB).
+
+The option set via ARGS would override it in the configuration file. For example
+
+    cerberus example.conf -t 8
+
+set the program to 8 threads.
 
 Commands in Particular
 ===
@@ -53,16 +59,16 @@ Commands in Particular
 Restricted Commands Bypass
 ---
 
-* `MGET` : execute multiple GETs
-* `MSET` : execute multiple SETs
-* `DEL` : execute multiple DELs
-* `RENAME` : if source and destination are not in the same slot, execute a GET-SET-DEL sequence
+* `MGET` : execute multiple `GET`s
+* `MSET` : execute multiple `SET`s
+* `DEL` : execute multiple `DEL`s
+* `RENAME` : if source and destination are not in the same slot, execute a `GET`-`SET`-`DEL` sequence without atomicity
 * `BLPOP` / `BRPOP`: one list limited; might return nil value before timeout [See detail (CN)](https://github.com/HunanTV/redis-cerberus/wiki/BLPOP-And-BRPOP)
 
 Extra Commands
 ---
 
-* `PROXY` / `INFO`: shows proxy information, including threads count, clients counts, commands statistics
+* `PROXY` / `INFO`: show proxy information, including threads count, clients counts, commands statistics, and remote redis servers
 * `KEYSINSLOT slot count`: list keys in a specified slot, same as `CLUSTER GETKEYSINSLOT slot count`
 * `UPDATESLOTMAP`: notify each thread to update slot map after the next operation
 * `SETREMOTES host port host port ...`: reset redis server addresses to arguments, and update slot map after that
