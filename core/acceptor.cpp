@@ -13,7 +13,7 @@ Acceptor::Acceptor(util::sref<Proxy> p, int listen_port)
 {
     fctl::set_nonblocking(this->fd);
     fctl::bind_to(this->fd, listen_port);
-    poll::poll_add_read(p->epfd, this->fd, this);
+    p->poll_add_ro(this);
 }
 
 void Acceptor::on_events(int)

@@ -78,6 +78,12 @@ struct ServerClientTest
         PollNotImplement::set_impl(util::mkptr(new PollNotImplement));
         ServerClientTest::set_server(nullptr);
     }
+
+    static void set_polls()
+    {
+        poll::pevent e;
+        fake_proxy.handle_events(&e, 0);
+    }
 };
 
 std::set<Connection*> ServerClientTest::active_conns;
@@ -121,10 +127,12 @@ TEST_F(ServerClientTest, ClientReadWrite)
     ASSERT_RO_CONN(client);
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RW_CONN(client);
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ASSERT_EQ(1, ServerClientTest::io_obj->write_buffer.size());
@@ -141,16 +149,19 @@ TEST_F(ServerClientTest, ClientReadWriteSegments)
     ASSERT_RO_CONN(client);
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ServerClientTest::io_obj->read_buffer.push_back("G\r\n");
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RW_CONN(client);
     ServerClientTest::io_obj->writing_sizes.push_back(4);
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     ASSERT_RW_CONN(client);
     ASSERT_EQ(1, ServerClientTest::io_obj->write_buffer.size());
@@ -158,6 +169,7 @@ TEST_F(ServerClientTest, ClientReadWriteSegments)
 
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ASSERT_EQ(2, ServerClientTest::io_obj->write_buffer.size());
@@ -181,12 +193,14 @@ TEST_F(ServerClientTest, SimpleRemoteCommand)
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     ServerClientTest::io_obj->read_buffer.push_back("*2\r\n$3\r\nGET\r\n$3\r\nmio\r\n");
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ASSERT_RW_CONN(server);
 
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     ASSERT_EQ(1, ServerClientTest::io_obj->write_buffer.size());
     ASSERT_EQ("*2\r\n$3\r\nGET\r\n$3\r\nmio\r\n", ServerClientTest::io_obj->write_buffer[0]);
@@ -198,11 +212,13 @@ TEST_F(ServerClientTest, SimpleRemoteCommand)
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     server->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RW_CONN(client);
     ASSERT_RO_CONN(server);
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     client->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ASSERT_RO_CONN(server);
@@ -226,15 +242,18 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
 
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     ASSERT_FALSE(server->closed());
     ASSERT_RO_CONN(client);
     ServerClientTest::io_obj->read_buffer.push_back("*2\r\n$3\r\nGET\r\n$3\r\nm");
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ServerClientTest::io_obj->read_buffer.push_back("io\r\n*2\r\n$3\r\nGET\r\n$4\r\n");
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
 
     ASSERT_RO_CONN(client);
     ASSERT_RW_CONN(server);
@@ -242,9 +261,11 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ServerClientTest::io_obj->read_buffer.push_back("yuko\r\n");
     ASSERT_RO_CONN(server);
     client->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
     ASSERT_RO_CONN(client);
     ASSERT_RO_CONN(server);
     ASSERT_EQ(1, ServerClientTest::io_obj->write_buffer.size());
@@ -254,6 +275,7 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     ServerClientTest::io_obj->read_buffer.push_back("$10\r\nnaganohara\r\n");
     server->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
     ASSERT_EQ(1, ServerClientTest::io_obj->write_buffer.size());
     ASSERT_EQ("*2\r\n$3\r\nGET\r\n$3\r\nmio\r\n", ServerClientTest::io_obj->write_buffer[0]);
     ASSERT_RW_CONN(client);
@@ -262,6 +284,7 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
     ServerClientTest::poll_obj->clear_pollee_events(client->fd);
     ServerClientTest::poll_obj->clear_pollee_events(server->fd);
     client->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_EQ(2, ServerClientTest::io_obj->write_buffer.size());
     ASSERT_EQ("*2\r\n$3\r\nGET\r\n$3\r\nmio\r\n", ServerClientTest::io_obj->write_buffer[0]);
     ASSERT_EQ("$10\r\nnaganohara\r\n", ServerClientTest::io_obj->write_buffer[1]);
@@ -270,6 +293,7 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
 
     ServerClientTest::io_obj->writing_sizes.push_back(8);
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_EQ(3, ServerClientTest::io_obj->write_buffer.size());
     ASSERT_EQ("*2\r\n$3\r\nGET\r\n$3\r\nmio\r\n", ServerClientTest::io_obj->write_buffer[0]);
     ASSERT_EQ("$10\r\nnaganohara\r\n", ServerClientTest::io_obj->write_buffer[1]);
@@ -278,6 +302,7 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
     ASSERT_RW_CONN(server);
 
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_EQ(4, ServerClientTest::io_obj->write_buffer.size());
     ASSERT_EQ("*2\r\n$3\r\n", ServerClientTest::io_obj->write_buffer[2]);
     ASSERT_EQ("GET\r\n$4\r\nyuko\r\n", ServerClientTest::io_obj->write_buffer[3]);
@@ -286,15 +311,18 @@ TEST_F(ServerClientTest, PipeRemoteCommands)
 
     ServerClientTest::io_obj->read_buffer.push_back("$4\r\n");
     server->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
     ASSERT_RO_CONN(client);
     ASSERT_RO_CONN(server);
 
     ServerClientTest::io_obj->read_buffer.push_back("yuko\r\n");
     server->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
     ASSERT_RW_CONN(client);
     ASSERT_RO_CONN(server);
 
     client->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_RO_CONN(client);
     ASSERT_RO_CONN(server);
     ASSERT_EQ(5, ServerClientTest::io_obj->write_buffer.size());
@@ -340,9 +368,11 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
         clients[i]->on_events(ManualPoller::EV_READ);
         responses.push_back(OK);
     }
+    ServerClientTest::set_polls();
 
     ASSERT_RW_CONN(server);
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_EQ(PIPE_X, ServerClientTest::io_obj->write_buffer.size());
     for (int i = 0; i < PIPE_X; ++i) {
         ASSERT_EQ(requests[i], ServerClientTest::io_obj->write_buffer[i]);
@@ -353,6 +383,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     ServerClientTest::io_obj->read_buffer.push_back(util::join("", responses));
     responses.clear();
     server->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
     for (int i = 0; i < PIPE_X; ++i) {
         ASSERT_RW_CONN(clients[i]);
     }
@@ -360,6 +391,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     for (int i = 0; i < PIPE_X; ++i) {
         clients[i]->on_events(ManualPoller::EV_WRITE);
     }
+    ServerClientTest::set_polls();
     for (int i = 0; i < PIPE_X; ++i) {
         ASSERT_RO_CONN(clients[i]);
     }
@@ -381,9 +413,11 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
         clients[i]->on_events(ManualPoller::EV_READ);
         responses.push_back(OK);
     }
+    ServerClientTest::set_polls();
 
     ASSERT_RW_CONN(server);
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_EQ(PIPE_Y, ServerClientTest::io_obj->write_buffer.size());
     for (int i = 0; i < PIPE_Y; ++i) {
         ASSERT_EQ(requests[i], ServerClientTest::io_obj->write_buffer[i]);
@@ -402,11 +436,13 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
         clients[i]->on_events(ManualPoller::EV_READ);
         responses_z.push_back("+RESULT:" + util::str(100000000L + j) + "\r\n");
     }
+    ServerClientTest::set_polls();
 
     ServerClientTest::io_obj->read_buffer.push_back(util::join("", responses));
     responses.clear();
     ASSERT_RW_CONN(server);
     server->on_events(ManualPoller::EV_READ | ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_EQ(PIPE_Z - PIPE_Y, ServerClientTest::io_obj->write_buffer.size());
     for (int i = PIPE_Y; i < PIPE_Z; ++i) {
         ASSERT_EQ(requests_z[i], ServerClientTest::io_obj->write_buffer[i - PIPE_Y]);
@@ -424,6 +460,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     for (int i = 0; i < PIPE_Y; ++i) {
         clients[i]->on_events(ManualPoller::EV_WRITE);
     }
+    ServerClientTest::set_polls();
 
     for (int i = 0; i < PIPE_Z; ++i) {
         ASSERT_RO_CONN(clients[i]);
@@ -436,6 +473,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     ServerClientTest::io_obj->write_buffer.clear();
 
     server->on_events(ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
     ASSERT_RW_CONN(server);
     ASSERT_EQ(0, ServerClientTest::io_obj->write_buffer.size());
 
@@ -443,6 +481,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     ServerClientTest::io_obj->read_buffer.push_back(util::join("", rsp_y_to_z));
 
     server->on_events(ManualPoller::EV_READ | ManualPoller::EV_WRITE);
+    ServerClientTest::set_polls();
 
     for (int i = 0; i < PIPE_Y; ++i) {
         ASSERT_RO_CONN(clients[i]);
@@ -460,6 +499,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     std::vector<std::string> rsp_0_to_y(responses_z.begin(), responses_z.begin() + PIPE_Y);
     ServerClientTest::io_obj->read_buffer.push_back(util::join("", rsp_0_to_y));
     server->on_events(ManualPoller::EV_READ);
+    ServerClientTest::set_polls();
     for (int i = 0; i < PIPE_Z; ++i) {
         ASSERT_RW_CONN(clients[i]);
     }
@@ -468,6 +508,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     for (int i = 0; i < PIPE_Z; ++i) {
         clients[i]->on_events(ManualPoller::EV_WRITE);
     }
+    ServerClientTest::set_polls();
     ASSERT_EQ(PIPE_Z, ServerClientTest::io_obj->write_buffer.size());
     for (int i = 0; i < PIPE_Y; ++i) {
         ASSERT_EQ(responses_z[i], ServerClientTest::io_obj->write_buffer[i]);

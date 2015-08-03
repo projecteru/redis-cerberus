@@ -2,6 +2,7 @@
 #define __CERBERUS_PROXY_HPP__
 
 #include <vector>
+#include <map>
 
 #include "command.hpp"
 #include "slot_map.hpp"
@@ -47,6 +48,7 @@ namespace cerb {
         Interval _last_cmd_elapse;
         Interval _last_remote_cost;
         bool _slot_map_expired;
+        std::map<Connection*, bool> _conn_poll_type;
 
         bool _should_update_slot_map() const;
         void _retrieve_slot_map();
@@ -60,6 +62,16 @@ namespace cerb {
         ~Proxy();
 
         Proxy(Proxy const&) = delete;
+
+        void set_conn_poll_ro(Connection* conn)
+        {
+            _conn_poll_type[conn] = _conn_poll_type[conn] || false;
+        }
+
+        void set_conn_poll_rw(Connection* conn)
+        {
+            _conn_poll_type[conn] = true;
+        }
 
         int clients_count() const
         {
@@ -105,6 +117,12 @@ namespace cerb {
         void new_client(int client_fd);
         void pop_client(Client* cli);
         void stat_proccessed(Interval cmd_elapse, Interval remote_cost);
+
+        void poll_add_ro(Connection* conn);
+        void poll_add_rw(Connection* conn);
+        void poll_ro(Connection* conn);
+        void poll_rw(Connection* conn);
+        void poll_del(Connection* conn);
     };
 
 }

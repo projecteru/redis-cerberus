@@ -1,5 +1,5 @@
-#include <sstream>
 #include <algorithm>
+#include <cppformat/format.h>
 
 #include "message.hpp"
 #include "command.hpp"
@@ -174,7 +174,7 @@ namespace {
 
         void command_responsed()
         {
-            client->group_responsed();
+            this->client->group_responsed();
             this->complete = true;
         }
 
@@ -220,13 +220,12 @@ namespace {
 
         void command_responsed()
         {
-            if (--awaiting_count == 0) {
-                if (1 < commands.size()) {
-                    std::stringstream ss;
-                    ss << "*" << commands.size() << "\r\n";
-                    arr_payload = Buffer::from_string(ss.str());
+            if (--this->awaiting_count == 0) {
+                if (1 < this->commands.size()) {
+                    this->arr_payload = Buffer::from_string(fmt::format(
+                        "*{}\r\n", this->commands.size()));
                 }
-                client->group_responsed();
+                this->client->group_responsed();
                 this->complete = true;
             }
         }

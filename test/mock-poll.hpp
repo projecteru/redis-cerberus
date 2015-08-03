@@ -22,8 +22,8 @@ public:
 
     virtual int poll_create();
     virtual int poll_wait(int epfd, poll::pevent* events, int maxevents, int timeout);
-    virtual void poll_add(int epfd, int evtfd, void* data);
     virtual void poll_add_read(int epfd, int evtfd, void* data);
+    virtual void poll_add_write(int epfd, int evtfd, void* data);
     virtual void poll_read(int epfd, int evtfd, void* data);
     virtual void poll_write(int epfd, int evtfd, void* data);
     virtual void poll_del(int epfd, int evtfd);
@@ -40,8 +40,8 @@ struct ManualPoller
     bool event_is_read(int events);
     bool event_is_write(int events);
 
-    void poll_add(int, int evtfd, void* data);
     void poll_add_read(int, int evtfd, void* data);
+    void poll_add_write(int, int evtfd, void* data);
     void poll_read(int, int evtfd, void* data);
     void poll_write(int, int evtfd, void* data);
     void poll_del(int, int evtfd);

@@ -20,8 +20,8 @@ bool PollNotImplement::event_is_write(int) { return false; }
 
 int PollNotImplement::poll_create() { return 0; }
 int PollNotImplement::poll_wait(int, poll::pevent*, int, int) { return 0; }
-void PollNotImplement::poll_add(int, int, void*) {}
 void PollNotImplement::poll_add_read(int, int, void*) {}
+void PollNotImplement::poll_add_write(int, int, void*) {}
 void PollNotImplement::poll_read(int, int, void*) {}
 void PollNotImplement::poll_write(int, int, void*) {}
 void PollNotImplement::poll_del(int, int) {}
@@ -51,29 +51,33 @@ int poll::poll_wait(int epfd, poll::pevent* events, int maxevents, int timeout)
     return PollNotImplement::get_impl()->poll_wait(epfd, events, maxevents, timeout);
 }
 
-void poll::poll_add(int epfd, int evtfd, void* data)
+int poll::poll_add_read(int epfd, int evtfd, void* data)
 {
-    return PollNotImplement::get_impl()->poll_add(epfd, evtfd, data);
+    PollNotImplement::get_impl()->poll_add_read(epfd, evtfd, data);
+    return 0;
 }
 
-void poll::poll_add_read(int epfd, int evtfd, void* data)
+int poll::poll_add_write(int epfd, int evtfd, void* data)
 {
-    return PollNotImplement::get_impl()->poll_add_read(epfd, evtfd, data);
+    PollNotImplement::get_impl()->poll_add_write(epfd, evtfd, data);
+    return 0;
 }
 
-void poll::poll_read(int epfd, int evtfd, void* data)
+int poll::poll_read(int epfd, int evtfd, void* data)
 {
-    return PollNotImplement::get_impl()->poll_read(epfd, evtfd, data);
+    PollNotImplement::get_impl()->poll_read(epfd, evtfd, data);
+    return 0;
 }
 
-void poll::poll_write(int epfd, int evtfd, void* data)
+int poll::poll_write(int epfd, int evtfd, void* data)
 {
-    return PollNotImplement::get_impl()->poll_write(epfd, evtfd, data);
+    PollNotImplement::get_impl()->poll_write(epfd, evtfd, data);
+    return 0;
 }
 
 void poll::poll_del(int epfd, int evtfd)
 {
-    return PollNotImplement::get_impl()->poll_del(epfd, evtfd);
+    PollNotImplement::get_impl()->poll_del(epfd, evtfd);
 }
 
 bool ManualPoller::event_is_hup(int events)
@@ -91,16 +95,16 @@ bool ManualPoller::event_is_write(int events)
     return (events & EV_WRITE) != 0;
 }
 
-void ManualPoller::poll_add(int, int evtfd, void* data)
-{
-    EXPECT_FALSE(this->has_pollee(evtfd)) << evtfd << " in " << data;
-    pollees[evtfd] = EV_HUP | EV_READ | EV_WRITE;
-}
-
 void ManualPoller::poll_add_read(int, int evtfd, void* data)
 {
     EXPECT_FALSE(this->has_pollee(evtfd)) << evtfd << " in " << data;
     pollees[evtfd] = EV_HUP | EV_READ;
+}
+
+void ManualPoller::poll_add_write(int, int evtfd, void* data)
+{
+    EXPECT_FALSE(this->has_pollee(evtfd)) << evtfd << " in " << data;
+    pollees[evtfd] = EV_HUP | EV_READ | EV_WRITE;
 }
 
 void ManualPoller::poll_read(int, int evtfd, void* data)

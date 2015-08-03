@@ -50,44 +50,36 @@ namespace poll {
         return n;
     }
 
-    inline void poll_add_read(int epfd, int evtfd, void* data)
+    inline int poll_add_read(int epfd, int evtfd, void* data)
     {
         struct epoll_event ev;
         ev.events = EPOLLET | EPOLLIN | EPOLLRDHUP;
         ev.data.ptr = data;
-        if (::epoll_ctl(epfd, EPOLL_CTL_ADD, evtfd, &ev) == -1) {
-            throw cerb::SystemError("epoll_ctl add read", errno);
-        }
+        return ::epoll_ctl(epfd, EPOLL_CTL_ADD, evtfd, &ev);
     }
 
-    inline void poll_add(int epfd, int evtfd, void* data)
+    inline int poll_add_write(int epfd, int evtfd, void* data)
     {
         struct epoll_event ev;
         ev.events = EPOLLET | EPOLLIN | EPOLLOUT | EPOLLRDHUP;
         ev.data.ptr = data;
-        if (::epoll_ctl(epfd, EPOLL_CTL_ADD, evtfd, &ev) == -1) {
-            throw cerb::SystemError("epoll_ctl add", errno);
-        }
+        return ::epoll_ctl(epfd, EPOLL_CTL_ADD, evtfd, &ev);
     }
 
-    inline void poll_read(int epfd, int evtfd, void* data)
+    inline int poll_read(int epfd, int evtfd, void* data)
     {
         struct epoll_event ev;
         ev.events = EPOLLET | EPOLLIN;
         ev.data.ptr = data;
-        if (::epoll_ctl(epfd, EPOLL_CTL_MOD, evtfd, &ev) == -1) {
-            throw cerb::SystemError("epoll_ctl modi", errno);
-        }
+        return ::epoll_ctl(epfd, EPOLL_CTL_MOD, evtfd, &ev);
     }
 
-    inline void poll_write(int epfd, int evtfd, void* data)
+    inline int poll_write(int epfd, int evtfd, void* data)
     {
         struct epoll_event ev;
         ev.events = EPOLLET | EPOLLIN | EPOLLOUT;
         ev.data.ptr = data;
-        if (::epoll_ctl(epfd, EPOLL_CTL_MOD, evtfd, &ev) == -1) {
-            throw cerb::SystemError("epoll_ctl modio", errno);
-        }
+        return ::epoll_ctl(epfd, EPOLL_CTL_MOD, evtfd, &ev);
     }
 
     inline void poll_del(int epfd, int evtfd)
@@ -119,10 +111,10 @@ namespace poll {
 
     int poll_create();
     int poll_wait(int epfd, pevent* events, int maxevents, int timeout);
-    void poll_add(int epfd, int evtfd, void* data);
-    void poll_add_read(int epfd, int evtfd, void* data);
-    void poll_read(int epfd, int evtfd, void* data);
-    void poll_write(int epfd, int evtfd, void* data);
+    int poll_add_read(int epfd, int evtfd, void* data);
+    int poll_add_write(int epfd, int evtfd, void* data);
+    int poll_read(int epfd, int evtfd, void* data);
+    int poll_write(int epfd, int evtfd, void* data);
     void poll_del(int epfd, int evtfd);
 
 }

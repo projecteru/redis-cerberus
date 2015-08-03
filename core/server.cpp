@@ -38,9 +38,9 @@ void Server::on_events(int events)
 void Server::_send_buffer_set()
 {
     if (this->_output_buffer_set.writev(this->fd)) {
-        poll::poll_read(_proxy->epfd, this->fd, this);
+        this->_proxy->set_conn_poll_ro(this);
     } else {
-        poll::poll_write(_proxy->epfd, this->fd, this);
+        this->_proxy->set_conn_poll_rw(this);
     }
 }
 
@@ -50,7 +50,7 @@ void Server::_send_to()
         return this->_send_buffer_set();
     }
     if (this->_commands.empty()) {
-        return poll::poll_read(_proxy->epfd, this->fd, this);
+        this->_proxy->set_conn_poll_ro(this);
     }
     if (!this->_ready_commands.empty()) {
         LOG(DEBUG) << "+busy";
@@ -99,7 +99,7 @@ void Server::_recv_from()
         }
     }
     this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
-    poll::poll_read(_proxy->epfd, this->fd, this);
+    this->_proxy->set_conn_poll_ro(this);
 }
 
 void Server::push_client_command(util::sref<DataCommand> cmd)
@@ -209,7 +209,7 @@ void Server::_reconnect(util::Address const& addr, Proxy* p)
     fctl::set_nonblocking(this->fd);
     fctl::connect_fd(addr.host, addr.port, this->fd);
     LOG(INFO) << "Open " << this->str();
-    poll::poll_add(_proxy->epfd, this->fd, this);
+    p->poll_add_rw(this);
     ::on_server_connected(this->fd, this->_ready_commands);
 }
 

@@ -13,15 +13,15 @@ int AutomaticPoller::poll_wait(int, poll::pevent* events, int maxevents, int)
     return this->poll_wait(events, maxevents);
 }
 
-void AutomaticPoller::poll_add(int, int evtfd, void* data)
-{
-    ManualPoller::poll_add(0, evtfd, data);
-    registered_data[evtfd] = data;
-}
-
 void AutomaticPoller::poll_add_read(int, int evtfd, void* data)
 {
     ManualPoller::poll_add_read(0, evtfd, data);
+    registered_data[evtfd] = data;
+}
+
+void AutomaticPoller::poll_add_write(int, int evtfd, void* data)
+{
+    ManualPoller::poll_add_write(0, evtfd, data);
     registered_data[evtfd] = data;
 }
 

@@ -23,12 +23,12 @@ SlotsMapUpdater::SlotsMapUpdater(util::Address a, Proxy* p)
     LOG(DEBUG) << "Create " << this->str();
     fctl::set_nonblocking(fd);
     fctl::connect_fd(this->addr.host, this->addr.port, this->fd);
-    poll::poll_add(_proxy->epfd, this->fd, this);
+    p->poll_add_rw(this);
 }
 
 void SlotsMapUpdater::_await_data()
 {
-    poll::poll_read(_proxy->epfd, this->fd, this);
+    this->_proxy->poll_ro(this);
 }
 
 void SlotsMapUpdater::_send_cmd()
@@ -130,7 +130,7 @@ void Proxy::_set_slot_map(std::vector<RedisNode> map, std::set<util::Address> re
     }
 
     for (Server* svr: svrs) {
-        poll::poll_write(this->epfd, svr->fd, svr);
+        this->poll_rw(svr);
     }
 }
 
@@ -222,15 +222,32 @@ void Proxy::inactivate_long_conn(Connection* conn)
     this->_inactive_long_connections.insert(conn);
 }
 
+static void poll_ctl(Proxy* p, std::map<Connection*, bool> conn_polls)
+{
+    LOG(DEBUG) << "*poll ctl " << conn_polls.size();
+    for (std::pair<Connection*, bool> conn_writable: conn_polls) {
+        Connection* c = conn_writable.first;
+        if (c->closed()) {
+            continue;
+        }
+        LOG(DEBUG) << " poll ctl " << c->str();
+        if (conn_writable.second) {
+            p->poll_rw(c);
+        } else {
+            p->poll_ro(c);
+        }
+    }
+}
+
 void Proxy::handle_events(poll::pevent events[], int nfds)
 {
+    LOG(DEBUG) << "*poll wait: " << nfds;
     std::set<Connection*> active_conns;
     for (Connection* c: this->_inactive_long_connections) {
         c->close();
     }
     std::set<Connection*> closed_conns(std::move(this->_inactive_long_connections));
 
-    LOG(DEBUG) << "*poll wait: " << nfds;
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
         LOG(DEBUG) << "*poll process " << conn->str();
@@ -247,6 +264,8 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
         }
     }
     LOG(DEBUG) << "*poll clean";
+
+    ::poll_ctl(this, std::move(this->_conn_poll_type));
     for (Connection* c: active_conns) {
         c->after_events(active_conns);
     }
@@ -254,6 +273,10 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
     if (this->_should_update_slot_map()) {
         LOG(DEBUG) << "Should update slot map";
         this->_retrieve_slot_map();
+        /* do it again after try updating slot map
+         * because some client may get CLUSTERDOWN message when no available remotes
+         */
+        ::poll_ctl(this, std::move(this->_conn_poll_type));
     }
     LOG(DEBUG) << "*poll done";
 }
@@ -289,4 +312,37 @@ void Proxy::stat_proccessed(Interval cmd_elapse, Interval remote_cost)
     _last_cmd_elapse = cmd_elapse;
     _total_remote_cost += remote_cost;
     _last_remote_cost = remote_cost;
+}
+
+void Proxy::poll_add_ro(Connection* conn)
+{
+    if (poll::poll_add_read(this->epfd, conn->fd, conn)) {
+        throw cerb::SystemError("poll r+" + conn->str(), errno);
+    }
+}
+
+void Proxy::poll_add_rw(Connection* conn)
+{
+    if (poll::poll_add_write(this->epfd, conn->fd, conn)) {
+        throw cerb::SystemError("poll rw+" + conn->str(), errno);
+    }
+}
+
+void Proxy::poll_ro(Connection* conn)
+{
+    if (poll::poll_read(this->epfd, conn->fd, conn)) {
+        throw cerb::SystemError("poll r*" + conn->str(), errno);
+    }
+}
+
+void Proxy::poll_rw(Connection* conn)
+{
+    if (poll::poll_write(this->epfd, conn->fd, conn)) {
+        throw cerb::SystemError("poll rw*" + conn->str(), errno);
+    }
+}
+
+void Proxy::poll_del(Connection* conn)
+{
+    poll::poll_del(this->epfd, conn->fd);
 }

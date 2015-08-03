@@ -44,8 +44,8 @@ Subscription::Subscription(Proxy* p, int clientfd, Server* peer, Buffer subs_cmd
     : LongConnection(clientfd, peer)
     , _server(peer->addr, std::move(subs_cmd), this)
 {
-    poll::poll_add_read(p->epfd, this->_server.fd, &this->_server);
-    poll::poll_add_read(p->epfd, this->fd, this);
+    p->poll_add_ro(&this->_server);
+    p->poll_add_ro(this);
     LOG(DEBUG) << "Start subscription " << this->str();
 }
 
@@ -111,8 +111,8 @@ BlockedListPop::BlockedListPop(Proxy* p, int clientfd, Server* peer, Buffer cmd)
     , _server(peer->addr, std::move(cmd), this)
     , _proxy(p)
 {
-    poll::poll_add_read(p->epfd, this->_server.fd, &this->_server);
-    poll::poll_add_read(p->epfd, this->fd, this);
+    p->poll_add_ro(&this->_server);
+    p->poll_add_ro(this);
     LOG(DEBUG) << "Start blocked pop " << this->str();
 }
 
@@ -137,7 +137,7 @@ void BlockedListPop::restore_client(Buffer const& rsp, bool update_slot_map)
     }
     rsp.write(this->fd);
     LOG(DEBUG) << "Restore to normal client " << this->str();
-    poll::poll_del(this->_proxy->epfd, this->fd);
+    this->_proxy->poll_del(this);
     new Client(this->fd, this->_proxy);
     this->fd = -1;
     if (update_slot_map) {

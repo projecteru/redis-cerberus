@@ -46,8 +46,8 @@ struct AutomaticPoller
 
     int poll_create() {return 0;}
     int poll_wait(int, poll::pevent* events, int maxevents, int);
-    void poll_add(int, int evtfd, void* data);
     void poll_add_read(int, int evtfd, void* data);
+    void poll_add_write(int, int evtfd, void* data);
     void poll_del(int, int evtfd);
 
     std::map<int, void*> registered_data;

@@ -15,7 +15,7 @@ Client::Client(int fd, Proxy* p)
     , _proxy(p)
     , _awaiting_count(0)
 {
-    poll::poll_add_read(p->epfd, this->fd, this);
+    p->poll_add_ro(this);
 }
 
 Client::~Client()
@@ -74,13 +74,13 @@ void Client::_send_buffer_set()
         this->_ready_groups.clear();
         this->_peers.clear();
         if (this->_parsed_groups.empty()) {
-            poll::poll_read(this->_proxy->epfd, this->fd, this);
+            this->_proxy->set_conn_poll_ro(this);
         } else {
             _process();
         }
         return;
     }
-    poll::poll_write(this->_proxy->epfd, this->fd, this);
+    this->_proxy->set_conn_poll_rw(this);
 }
 
 void Client::_write_response()
@@ -115,7 +115,7 @@ void Client::_read_request()
     if (this->_awaiting_groups.empty() && this->_ready_groups.empty()) {
         this->_process();
     } else {
-        poll::poll_read(this->_proxy->epfd, this->fd, this);
+        this->_proxy->set_conn_poll_ro(this);
     }
 }
 
@@ -126,14 +126,14 @@ void Client::reactivate(util::sref<Command> cmd)
         return;
     }
     LOG(DEBUG) << "reactivated " << s->str();
-    poll::poll_write(this->_proxy->epfd, s->fd, s);
+    this->_proxy->set_conn_poll_rw(s);
 }
 
 void Client::_process()
 {
     for (auto& g: this->_parsed_groups) {
         if (g->long_connection()) {
-            poll::poll_del(this->_proxy->epfd, this->fd);
+            this->_proxy->poll_del(this);
             g->deliver_client(this->_proxy);
             LOG(DEBUG) << "Convert self to long connection, delete " << this;
             return this->close();
@@ -149,9 +149,9 @@ void Client::_process()
 
     if (0 < this->_awaiting_count) {
         for (Server* svr: this->_peers) {
-            poll::poll_write(this->_proxy->epfd, svr->fd, svr);
+            this->_proxy->set_conn_poll_rw(svr);
         }
-        poll::poll_read(this->_proxy->epfd, this->fd, this);
+        this->_proxy->set_conn_poll_ro(this);
     } else {
         this->_response_ready();
     }
@@ -164,9 +164,9 @@ void Client::_response_ready()
         return;
     }
     if (this->_awaiting_groups.empty() && this->_ready_groups.empty()) {
-        return poll::poll_read(this->_proxy->epfd, this->fd, this);
+        return this->_proxy->set_conn_poll_ro(this);
     }
-    poll::poll_write(this->_proxy->epfd, this->fd, this);
+    this->_proxy->set_conn_poll_rw(this);
 }
 
 void Client::group_responsed()
