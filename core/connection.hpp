@@ -2,6 +2,7 @@
 #define __CERBERUS_CONNECTION_HPP__
 
 #include <set>
+#include <string>
 
 #include "fdutil.hpp"
 
@@ -20,6 +21,7 @@ namespace cerb {
         virtual void on_events(int events) = 0;
         virtual void after_events(std::set<Connection*>&) {}
         virtual void on_error() = 0;
+        virtual std::string str() const = 0;
     };
 
     class ProxyConnection

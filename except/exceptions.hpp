@@ -110,15 +110,6 @@ namespace cerb {
         {}
     };
 
-    class SocketCreateError
-        : public IOError
-    {
-    public:
-        SocketCreateError(std::string what, int errcode)
-            : IOError(std::move(what), errcode)
-        {}
-    };
-
     class ConnectionRefused
         : public IOErrorBase
     {

@@ -30,6 +30,7 @@ namespace cerb {
 
         void on_events(int events);
         void on_error();
+        std::string str() const;
     };
 
     class Proxy {

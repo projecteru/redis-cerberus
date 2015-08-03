@@ -28,6 +28,11 @@ void Acceptor::on_events(int)
     this->_proxy->new_client(::client_fd = ::client_fd_gen());
 }
 
+std::string Acceptor::str() const
+{
+    return "";
+}
+
 int last_client_fd()
 {
     return ::client_fd;

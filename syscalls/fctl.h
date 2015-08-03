@@ -37,7 +37,7 @@ namespace fctl {
     {
         int fd = ::socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) {
-            throw cerb::SocketCreateError("Server create", errno);
+            throw cerb::IOError("Socket create", errno);
         }
         return fd;
     }

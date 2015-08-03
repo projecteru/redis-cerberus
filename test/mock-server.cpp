@@ -76,6 +76,7 @@ Server* Server::get_server(util::Address addr, Proxy*)
 
 void Server::on_events(int) {}
 void Server::after_events(std::set<Connection*>&) {}
+std::string Server::str() const {return "";}
 
 void Server::close_conn()
 {

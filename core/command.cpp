@@ -750,8 +750,7 @@ namespace {
                     return this->client->close();
                 }
                 new Subscription(p, this->client->fd, s, std::move(buffer));
-                LOG(DEBUG) << "Deliver " << client.id().str() << "'s FD "
-                           << this->client->fd << " as subscription client";
+                LOG(DEBUG) << "Convert " << this->client->str() << " as subscription";
                 this->client->fd = -1;
             }
         };
@@ -803,8 +802,7 @@ namespace {
                     return this->client->close();
                 }
                 new BlockedListPop(p, this->client->fd, s, std::move(buffer));
-                LOG(DEBUG) << "Deliver " << client.id().str() << "'s FD "
-                           << this->client->fd << " as blocked pop client";
+                LOG(DEBUG) << "Convert " << this->client->str() << " as blocked pop";
                 this->client->fd = -1;
             }
         };

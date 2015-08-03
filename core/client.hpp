@@ -35,6 +35,7 @@ namespace cerb {
 
         void on_events(int events);
         void after_events(std::set<Connection*>&);
+        std::string str() const;
 
         void group_responsed();
         void add_peer(Server* svr);

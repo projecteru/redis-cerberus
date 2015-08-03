@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cppformat/format.h>
 
 #include "client.hpp"
 #include "proxy.hpp"
@@ -41,10 +42,13 @@ void Client::on_events(int events)
             this->_write_response();
         }
     } catch (BadRedisMessage& e) {
-        LOG(ERROR) << "Receive bad message from client " << this->fd
-                   << " because: " << e.what();
-        LOG(DEBUG) << "Dump buffer (before close): "
+        LOG(DEBUG) << "Receive bad message from " << this->str()
+                   << " because: " << e.what()
+                   << "\nDump buffer (before close): "
                    << this->_buffer.to_string();
+        return this->close();
+    } catch (IOErrorBase& e) {
+        LOG(DEBUG) << "IOError: " << e.what() << " :: Close " << this->str();
         return this->close();
     }
 }
@@ -54,6 +58,11 @@ void Client::after_events(std::set<Connection*>&)
     if (this->closed()) {
         delete this;
     }
+}
+
+std::string Client::str() const
+{
+    return fmt::format("Client({}@{})", this->fd, static_cast<void const*>(this));
 }
 
 void Client::_send_buffer_set()
@@ -97,7 +106,8 @@ void Client::_write_response()
 void Client::_read_request()
 {
     int n = this->_buffer.read(this->fd);
-    LOG(DEBUG) << "-read from " << this->fd << " current buffer size: " << this->_buffer.size() << " read returns " << n;
+    LOG(DEBUG) << "Read from " << this->str() << " current buffer size: "
+               << this->_buffer.size() << " read returns " << n;
     if (n == 0) {
         return this->close();
     }
@@ -115,7 +125,7 @@ void Client::reactivate(util::sref<Command> cmd)
     if (s == nullptr) {
         return;
     }
-    LOG(DEBUG) << "reactivated " << s->fd;
+    LOG(DEBUG) << "reactivated " << s->str();
     poll::poll_write(this->_proxy->epfd, s->fd, s);
 }
 

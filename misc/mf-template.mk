@@ -35,7 +35,7 @@ CFLAGS=-Wall -Wextra -Wold-style-cast -Werror $(OPT_FLAGS)
 MKTMP := $(shell mktemp)
 
 LIBS_DIR=libs
-LIBS=-L$(LIBS_DIR) -lpthread -lbacktracpp
+LIBS=-L$(LIBS_DIR) -lpthread -lbacktracpp -lcppformat
 WORK_LIBS=$(LIBS)
 TEST_LIBS=-lgtest -lgtest_main $(LIBS)
 

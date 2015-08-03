@@ -1,4 +1,5 @@
 #include <map>
+#include <cppformat/format.h>
 
 #include "command.hpp"
 #include "server.hpp"
@@ -22,7 +23,7 @@ void Server::on_events(int events)
         try {
             this->_recv_from();
         } catch (BadRedisMessage& e) {
-            LOG(FATAL) << "Receive bad message from server " << this->fd
+            LOG(FATAL) << "Receive bad message from server " << this->str()
                        << " because: " << e.what()
                        << " dump buffer (before close): "
                        << this->_buffer.to_string();
@@ -71,10 +72,10 @@ void Server::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
     if (n == 0) {
-        LOG(INFO) << "Server hang up: " << this->fd;
+        LOG(INFO) << "Server hang up: " << this->str();
         throw ConnectionHungUp();
     }
-    LOG(DEBUG) << "+read from " << this->fd << " buffer size " << this->_buffer.size();
+    LOG(DEBUG) << "Read " << this->str() << " buffer size " << this->_buffer.size();
     auto responses(split_server_response(this->_buffer));
     if (responses.size() > this->_ready_commands.size()) {
         LOG(ERROR) << "+Error on split, expected size: " << this->_ready_commands.size()
@@ -151,10 +152,16 @@ void Server::after_events(std::set<Connection*>&)
     }
 }
 
+std::string Server::str() const
+{
+    return fmt::format("Server({}@{})[{}]", this->fd,
+                       static_cast<void const*>(this), this->addr.str());
+}
+
 void Server::close_conn()
 {
     if (!this->closed()) {
-        LOG(INFO) << "Close Server " << this << " (" << this->fd << ") for " << this->addr.str();
+        LOG(INFO) << "Close " << this->str();
         this->close();
         this->_buffer.clear();
 
@@ -196,12 +203,12 @@ static std::function<void(int, std::vector<util::sref<DataCommand>>&)> on_server
 void Server::_reconnect(util::Address const& addr, Proxy* p)
 {
     this->fd = fctl::new_stream_socket();
-    LOG(INFO) << "Open Server " << this->fd << " in " << this << " for " << addr.str();
     this->_proxy = p;
     this->addr = addr;
 
     fctl::set_nonblocking(this->fd);
     fctl::connect_fd(addr.host, addr.port, this->fd);
+    LOG(INFO) << "Open " << this->str();
     poll::poll_add(_proxy->epfd, this->fd, this);
     ::on_server_connected(this->fd, this->_ready_commands);
 }

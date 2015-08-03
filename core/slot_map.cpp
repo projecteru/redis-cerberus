@@ -35,7 +35,7 @@ static std::function<std::set<Server*>(
                 continue;
             }
             Server* server = Server::get_server(node.addr, proxy);
-            LOG(DEBUG) << "Get " << server->fd << " for " << node.addr.str();
+            LOG(DEBUG) << "Get " << server->str() << " for " << node.addr.str();
             for (auto const& rg: node.slot_ranges) {
                 for (slot s = rg.first; s <= rg.second; ++s) {
                     removed.insert(servers[s]);

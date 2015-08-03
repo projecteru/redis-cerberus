@@ -15,6 +15,7 @@ namespace cerb {
 
         void on_events(int);
         void on_error() {}
+        std::string str() const;
     };
 
 }

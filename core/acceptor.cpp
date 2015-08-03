@@ -1,3 +1,5 @@
+#include <cppformat/format.h>
+
 #include "acceptor.hpp"
 #include "except/exceptions.hpp"
 #include "syscalls/fctl.h"
@@ -30,4 +32,9 @@ void Acceptor::on_events(int)
             throw SocketAcceptError(errno);
         }
     }
+}
+
+std::string Acceptor::str() const
+{
+    return fmt::format("Acceptor({}@{})", this->fd, static_cast<void const*>(this));
 }

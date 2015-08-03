@@ -1,3 +1,5 @@
+#include <cppformat/format.h>
+
 #include "proxy.hpp"
 #include "server.hpp"
 #include "client.hpp"
@@ -18,7 +20,7 @@ SlotsMapUpdater::SlotsMapUpdater(util::Address a, Proxy* p)
     , _proxy(p)
     , addr(std::move(a))
 {
-    LOG(DEBUG) << "*Create updater " << this->fd << " in " << this;
+    LOG(DEBUG) << "Create " << this->str();
     fctl::set_nonblocking(fd);
     fctl::connect_fd(this->addr.host, this->addr.port, this->fd);
     poll::poll_add(_proxy->epfd, this->fd, this);
@@ -46,7 +48,7 @@ void SlotsMapUpdater::_recv_rsp()
         throw BadRedisMessage("Ask cluster nodes returns responses with size=" +
                               util::str(int(rsp.size())));
     }
-    LOG(DEBUG) << "*Updated from " << this->fd << " in " << this;
+    LOG(DEBUG) << "*Updated from " << this->str();
     this->close();
     _proxy->notify_slot_map_updated(
         parse_slot_map(rsp[0]->get_buffer().to_string(), this->addr.host));
@@ -55,7 +57,7 @@ void SlotsMapUpdater::_recv_rsp()
 void SlotsMapUpdater::on_events(int events)
 {
     if (poll::event_is_hup(events)) {
-        LOG(ERROR) << "Failed to retrieve slot map from " << this->addr.str()
+        LOG(ERROR) << "Failed to retrieve slot map from " << this->str()
                    << ". Closed because remote hung up.";
         this->close();
         return _proxy->notify_slot_map_updated({});
@@ -68,8 +70,7 @@ void SlotsMapUpdater::on_events(int events)
             this->_recv_rsp();
         } catch (BadRedisMessage& e) {
             LOG(ERROR) << "Receive bad message from server on update from "
-                       << this->fd
-                       << " because: " << e.what();
+                       << this->str() << " because " << e.what();
             this->close();
             return _proxy->notify_slot_map_updated({});
         }
@@ -80,6 +81,12 @@ void SlotsMapUpdater::on_error()
 {
     this->close();
     _proxy->notify_slot_map_updated({});
+}
+
+std::string SlotsMapUpdater::str() const
+{
+    return fmt::format("SlotsMapUpdater({}@{})[{}]", this->fd,
+                       static_cast<void const*>(this), this->addr.str());
 }
 
 Proxy::Proxy()
@@ -206,7 +213,7 @@ bool Proxy::_should_update_slot_map() const
 
 void Proxy::retry_move_ask_command_later(util::sref<DataCommand> cmd)
 {
-    LOG(DEBUG) << "Retry later: " << cmd.id().str() << " for client " << cmd->group->client->fd;
+    LOG(DEBUG) << "Retry later: " << cmd.id().str() << " for " << cmd->group->client->str();
     this->_retrying_commands.push_back(cmd);
 }
 
@@ -226,7 +233,7 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
     LOG(DEBUG) << "*poll wait: " << nfds;
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
-        LOG(DEBUG) << "*poll process " << conn->fd << " in " << conn;
+        LOG(DEBUG) << "*poll process " << conn->str();
         if (closed_conns.find(conn) != closed_conns.end()) {
             continue;
         }
@@ -234,8 +241,7 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
         try {
             conn->on_events(events[i].events);
         } catch (IOErrorBase& e) {
-            LOG(ERROR) << "IOError: " << e.what() << " :: "
-                       << "Close connection to " << conn->fd << " in " << conn;
+            LOG(ERROR) << "IOError: " << e.what() << " :: " << "Close " << conn->str();
             conn->on_error();
             closed_conns.insert(conn);
         }
@@ -266,7 +272,7 @@ void Proxy::new_client(int client_fd)
 
 void Proxy::pop_client(Client* cli)
 {
-    LOG(DEBUG) << "Pop client " << cli->fd;
+    LOG(DEBUG) << "Pop " << cli->str();
     util::erase_if(
         this->_retrying_commands,
         [cli](util::sref<DataCommand> cmd)

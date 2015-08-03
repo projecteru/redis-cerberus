@@ -32,6 +32,7 @@ namespace cerb {
 
             void on_events(int events);
             void after_events(std::set<Connection*>& active_conns);
+            std::string str() const;
         };
 
         ServerConn _server;
@@ -39,6 +40,7 @@ namespace cerb {
         Subscription(Proxy* proxy, int clientfd, Server* peer, Buffer subs_cmd);
 
         void after_events(std::set<Connection*>& active_conns);
+        std::string str() const;
     };
 
     class BlockedListPop
@@ -55,6 +57,7 @@ namespace cerb {
             void on_events(int events);
             void on_error();
             void after_events(std::set<Connection*>& active_conns);
+            std::string str() const;
         };
 
         ServerConn _server;
@@ -63,6 +66,7 @@ namespace cerb {
         BlockedListPop(Proxy* proxy, int clientfd, Server* peer, Buffer cmd);
 
         void after_events(std::set<Connection*>& active_conns);
+        std::string str() const;
         void restore_client(Buffer const& rsp, bool update_slot_map);
     };
 

@@ -29,7 +29,7 @@ void ListenThread::run()
             } catch (SystemError& e) {
                 LOG(ERROR) << "Unexpected error";
                 LOG(ERROR) << e.stack_trace;
-                LOG(ERROR) << "Terminated by SystemRrror: " << e.what();
+                LOG(ERROR) << "Terminated by SystemError: " << e.what();
                 exit(1);
             } catch (std::runtime_error& e) {
                 LOG(FATAL) << "Terminated by runtime error: " << e.what();

@@ -1,3 +1,5 @@
+#include <cppformat/format.h>
+
 #include "subscription.hpp"
 #include "server.hpp"
 #include "client.hpp"
@@ -44,17 +46,21 @@ Subscription::Subscription(Proxy* p, int clientfd, Server* peer, Buffer subs_cmd
 {
     poll::poll_add_read(p->epfd, this->_server.fd, &this->_server);
     poll::poll_add_read(p->epfd, this->fd, this);
-    LOG(DEBUG) << "Start subscription from " << peer->addr.str()
-               << " (FD=" << _server.fd << ") to client (FD=" << this->fd
-               << ") by " << this;
+    LOG(DEBUG) << "Start subscription " << this->str();
 }
 
 void Subscription::after_events(std::set<Connection*>& active_conns)
 {
     if (this->closed()) {
-        active_conns.erase(&_server);
+        active_conns.erase(&this->_server);
         delete this;
     }
+}
+
+std::string Subscription::str() const
+{
+    return fmt::format("SubsCli({}@{})=S({}@{})", this->fd, static_cast<void const*>(this),
+                       this->_server.fd, static_cast<void const*>(&this->_server));
 }
 
 Subscription::ServerConn::ServerConn(util::Address const& addr,
@@ -75,13 +81,13 @@ void Subscription::ServerConn::on_events(int events)
     if (poll::event_is_read(events)) {
         Buffer b;
         if (b.read(this->fd) == 0) {
-            LOG(ERROR) << "Server closed subscription connection " << this->fd;
+            LOG(ERROR) << "Read 0 byte on " << this->str();
             return this->on_error();
         }
         b.write(this->_peer->fd);
     }
     if (poll::event_is_write(events)) {
-        LOG(DEBUG) << "UNEXPECTED";
+        LOG(DEBUG) << "UNEXPECTED write on " << this->str();
         this->on_error();
     }
 }
@@ -89,9 +95,15 @@ void Subscription::ServerConn::on_events(int events)
 void Subscription::ServerConn::after_events(std::set<Connection*>& active_conns)
 {
     if (this->closed()) {
-        active_conns.erase(_peer);
-        delete _peer;
+        active_conns.erase(this->_peer);
+        delete this->_peer;
     }
+}
+
+std::string Subscription::ServerConn::str() const
+{
+    return fmt::format("SubsSvr({}@{})=C({}@{})", this->fd, static_cast<void const*>(this),
+                       this->_peer->fd, static_cast<void const*>(this->_peer));
 }
 
 BlockedListPop::BlockedListPop(Proxy* p, int clientfd, Server* peer, Buffer cmd)
@@ -101,17 +113,21 @@ BlockedListPop::BlockedListPop(Proxy* p, int clientfd, Server* peer, Buffer cmd)
 {
     poll::poll_add_read(p->epfd, this->_server.fd, &this->_server);
     poll::poll_add_read(p->epfd, this->fd, this);
-    LOG(DEBUG) << "Start blocked pop from " << peer->addr.str()
-               << " (FD=" << _server.fd << ") to client (FD=" << this->fd
-               << ") by " << this;
+    LOG(DEBUG) << "Start blocked pop " << this->str();
 }
 
 void BlockedListPop::after_events(std::set<Connection*>& active_conns)
 {
     if (this->closed()) {
-        active_conns.erase(&_server);
+        active_conns.erase(&this->_server);
         delete this;
     }
+}
+
+std::string BlockedListPop::str() const
+{
+    return fmt::format("BlkCli({}@{})=S({}@{})", this->fd, static_cast<void const*>(this),
+                       this->_server.fd, static_cast<void const*>(&this->_server));
 }
 
 void BlockedListPop::restore_client(Buffer const& rsp, bool update_slot_map)
@@ -120,7 +136,7 @@ void BlockedListPop::restore_client(Buffer const& rsp, bool update_slot_map)
         return;
     }
     rsp.write(this->fd);
-    LOG(DEBUG) << "Restore FD " << this->fd;
+    LOG(DEBUG) << "Restore to normal client " << this->str();
     poll::poll_del(this->_proxy->epfd, this->fd);
     new Client(this->fd, this->_proxy);
     this->fd = -1;
@@ -146,7 +162,7 @@ void BlockedListPop::ServerConn::on_events(int events)
     }
     if (poll::event_is_read(events)) {
         if (this->_buffer.read(this->fd) == 0) {
-            LOG(ERROR) << "Server closed pop connection " << this->fd;
+            LOG(ERROR) << "Read 0 byte on " << this->str();
             return this->on_error();
         }
         auto responses(split_server_response(this->_buffer));
@@ -154,7 +170,7 @@ void BlockedListPop::ServerConn::on_events(int events)
             return;
         }
         if (responses[0]->server_moved()) {
-            LOG(DEBUG) << "Server moved pop connection " << this->fd;
+            LOG(DEBUG) << "Server moved pop connection " << this->str();
             this->_peer->restore_client(Response::NIL, true);
         } else {
             this->_peer->restore_client(responses[0]->get_buffer(), false);
@@ -175,7 +191,13 @@ void BlockedListPop::ServerConn::on_error()
 void BlockedListPop::ServerConn::after_events(std::set<Connection*>& active_conns)
 {
     if (this->closed()) {
-        active_conns.erase(_peer);
-        delete _peer;
+        active_conns.erase(this->_peer);
+        delete this->_peer;
     }
+}
+
+std::string BlockedListPop::ServerConn::str() const
+{
+    return fmt::format("BlkSvr({}@{})=C({}@{})", this->fd, static_cast<void const*>(this),
+                       this->_peer->fd, static_cast<void const*>(this->_peer));
 }

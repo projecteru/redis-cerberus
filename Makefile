@@ -32,6 +32,8 @@ core_objs:
 libs_3rdparty:
 	@mkdir -p $(LIBS_DIR)
 	@make -f backtracpp/Makefile LIB_DIR=$(LIBS_DIR) REL_PATH=backtracpp
+	@cd cppformat && cmake . && make cppformat
+	@cp cppformat/libcppformat.a $(LIBS_DIR)
 
 clean:
 	find -type f -name "*.o" -exec rm {} \;
