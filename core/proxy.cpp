@@ -141,7 +141,7 @@ void Proxy::_update_slot_map_failed()
             return;
         }
     }
-    this->_finished_slot_updaters = std::move(this->_slot_updaters);
+    this->_move_closed_slot_updaters();
     LOG(DEBUG) << "Failed to retrieve slot map, discard all commands.";
     _server_map.clear();
     std::vector<util::sref<DataCommand>> cmds(std::move(this->_retrying_commands));
@@ -179,7 +179,7 @@ void Proxy::notify_slot_map_updated(std::vector<RedisNode> nodes)
     std::set<slot> covered_slots;
     for (RedisNode const& node: nodes) {
         if (node.addr.host.empty()) {
-            LOG(DEBUG) << "Discard result because address is empty string :" << node.addr.port;
+            LOG(INFO) << "Discard result because address is empty string :" << node.addr.port;
             return this->_update_slot_map_failed();
         }
         for (auto const& begin_end: node.slot_ranges) {
@@ -190,14 +190,11 @@ void Proxy::notify_slot_map_updated(std::vector<RedisNode> nodes)
         remotes.insert(node.addr);
     }
     if (covered_slots.size() < CLUSTER_SLOT_COUNT) {
-        LOG(DEBUG) << "Discard result because only " << covered_slots.size() << " slots covered";
+        LOG(INFO) << "Discard result because only " << covered_slots.size() << " slots covered";
         return this->_update_slot_map_failed();
     }
     this->_set_slot_map(std::move(nodes), std::move(remotes));
-    for (auto& u: this->_slot_updaters) {
-        this->_finished_slot_updaters.push_back(std::move(u));
-    }
-    this->_slot_updaters.clear();
+    this->_move_closed_slot_updaters();
 }
 
 void Proxy::update_slot_map()
@@ -209,6 +206,18 @@ bool Proxy::_should_update_slot_map() const
 {
     return this->_slot_updaters.empty() &&
         (!this->_retrying_commands.empty() || this->_slot_map_expired);
+}
+
+void Proxy::_move_closed_slot_updaters()
+{
+    /* shall not use
+     *     _finished_slot_updaters = std::move(_slot_updaters)
+     * because _finished_slot_updaters may still contains some closed connections
+     */
+    for (auto& u: this->_slot_updaters) {
+        this->_finished_slot_updaters.push_back(std::move(u));
+    }
+    this->_slot_updaters.clear();
 }
 
 void Proxy::retry_move_ask_command_later(util::sref<DataCommand> cmd)

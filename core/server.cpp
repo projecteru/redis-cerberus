@@ -16,6 +16,9 @@ using namespace cerb;
 
 void Server::on_events(int events)
 {
+    if (this->closed()) {
+        return;
+    }
     if (poll::event_is_hup(events)) {
         return this->close_conn();
     }
@@ -72,7 +75,6 @@ void Server::_recv_from()
 {
     int n = this->_buffer.read(this->fd);
     if (n == 0) {
-        LOG(INFO) << "Server hang up: " << this->str();
         throw ConnectionHungUp();
     }
     LOG(DEBUG) << "Read " << this->str() << " buffer size " << this->_buffer.size();
@@ -222,7 +224,12 @@ Server* Server::_alloc_server(util::Address const& addr, Proxy* p)
         }
     }
     Server* s = servers_pool.back();
-    s->_reconnect(addr, p);
+    try {
+        s->_reconnect(addr, p);
+    } catch (IOErrorBase& e) {
+        LOG(ERROR) << "Fail to open server " << s->str() << " because " << e.what();
+        s->close_conn();
+    }
     servers_pool.pop_back();
     return s;
 }

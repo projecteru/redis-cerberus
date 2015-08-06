@@ -55,6 +55,7 @@ namespace cerb {
         void _set_slot_map(std::vector<RedisNode> map, std::set<util::Address> remotes);
         void _update_slot_map_failed();
         void _update_slot_map();
+        void _move_closed_slot_updaters();
     public:
         int epfd;
 

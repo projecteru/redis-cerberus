@@ -31,8 +31,9 @@ void AutomaticPoller::poll_del(int, int evtfd)
     registered_data.erase(evtfd);
 }
 
-int AutomaticPoller::poll_wait(poll::pevent* events, int maxevents)
+int AutomaticPoller::poll_wait(poll::pevent events[], int maxevents)
 {
+    this->last_pollees.clear();
     int count = 0;
     for (auto i: this->pollees) {
         int flags = 0;
@@ -43,6 +44,7 @@ int AutomaticPoller::poll_wait(poll::pevent* events, int maxevents)
             flags |= EV_READ;
         }
         if (flags != 0) {
+            this->last_pollees.insert(i.first);
             events[count].events = flags;
             events[count].data.ptr = this->registered_data[i.first];
             ++count;
