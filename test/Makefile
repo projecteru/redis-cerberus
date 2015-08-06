@@ -59,14 +59,15 @@ server-client-test:server-client.dt mock-proxy.dt mock-suit
 	$(VALGRIND) $(TESTDIR)/test-server-client.out
 
 event-loop-test:event-loop-test.dt mock-suit event-loop-data-proxy.dt \
-                event-loop-long-conn.dt
-	$(LINK) $(TESTDIR)/event-loop-test.o $(TESTDIR)/event-loop-data-proxy.o \
-	     $(TESTDIR)/event-loop-long-conn.o utils/*.o $(MOCK_OBJS) \
+                event-loop-long-conn.dt event-loop-slot-map-updating.dt
+	$(LINK) $(TESTDIR)/event-loop-test.o utils/*.o $(MOCK_OBJS) \
 	     $(OBJDIR)/connection.o $(OBJDIR)/server.o $(OBJDIR)/client.o \
 	     $(OBJDIR)/fdutil.o $(OBJDIR)/response.o $(OBJDIR)/command.o \
 	     $(OBJDIR)/subscription.o $(OBJDIR)/message.o $(OBJDIR)/globals.o \
 	     $(OBJDIR)/buffer.o $(OBJDIR)/slot_calc.o $(OBJDIR)/slot_map.o \
-	     $(OBJDIR)/proxy.o $(TEST_LIBS) \
+	     $(OBJDIR)/proxy.o $(TEST_LIBS) $(TESTDIR)/event-loop-data-proxy.o \
+	     $(TESTDIR)/event-loop-long-conn.o \
+	     $(TESTDIR)/event-loop-slot-map-updating.o \
 	  -o $(TESTDIR)/test-event-loop.out
 	$(VALGRIND) $(TESTDIR)/test-event-loop.out
 

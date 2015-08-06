@@ -19,11 +19,13 @@ struct MultipleBuffersIO
 
     ssize_t read(int fd, void* b, size_t count)
     {
+        EXPECT_NE(-1, fd);
         return buffers[fd].read(0, b, count);
     }
 
     ssize_t write(int fd, void const* buf, size_t count)
     {
+        EXPECT_NE(-1, fd);
         return buffers[fd].write(0, buf, count);
     }
 
@@ -51,8 +53,9 @@ struct AutomaticPoller
     void poll_del(int, int evtfd);
 
     std::map<int, void*> registered_data;
+    std::set<int> last_pollees;
 
-    int poll_wait(poll::pevent* events, int maxevents);
+    int poll_wait(poll::pevent events[], int maxevents);
 };
 
 struct EventLoopTest
@@ -118,6 +121,7 @@ struct EventLoopTest
         ev.events = ManualPoller::EV_HUP;
         ev.data.ptr = EventLoopTest::poll_obj->registered_data[fd];
         EventLoopTest::proxy->handle_events(&ev, 1);
+        EventLoopTest::poll_obj->last_pollees = {fd};
     }
 
     static int run_poll()
@@ -126,6 +130,11 @@ struct EventLoopTest
         int nfd = EventLoopTest::poll_obj->poll_wait(events, poll::MAX_EVENTS);
         EventLoopTest::proxy->handle_events(events, nfd);
         return nfd;
+    }
+
+    static std::set<int> const& last_pollees()
+    {
+        return EventLoopTest::poll_obj->last_pollees;
     }
 
     static void run_all_polls()
