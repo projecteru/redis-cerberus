@@ -138,7 +138,7 @@ void BlockedListPop::restore_client(Buffer const& rsp, bool update_slot_map)
     rsp.write(this->fd);
     LOG(DEBUG) << "Restore to normal client " << this->str();
     this->_proxy->poll_del(this);
-    new Client(this->fd, this->_proxy);
+    this->_proxy->new_client(this->fd);
     this->fd = -1;
     if (update_slot_map) {
         this->_proxy->update_slot_map();

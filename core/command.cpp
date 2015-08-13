@@ -833,7 +833,7 @@ namespace {
         {
             if (args_count != 2) {
                 return util::mkptr(new DirectCommandGroup(
-                    c, "-ERR BLPOP/BRPOP takes exactly 2 argument KEY TIMEOUT in proxy\r\n"));
+                    c, "-ERR BLPOP/BRPOP takes exactly 2 arguments KEY TIMEOUT in proxy\r\n"));
             }
             return util::mkptr(new BlockedPop(c, Buffer(this->begin, end),
                                               this->slot_calc.get_slot()));
