@@ -5,6 +5,7 @@ Build
 
 Requirements:
 
+* `make` and `cmake`
 * UNIX-like system with `SO_REUSEPORT | SO_REUSEADDR` support
 * `epoll` support
 * pthread
@@ -45,7 +46,8 @@ The first argument is path of a configuration file, then optional arguments. Tho
 * bind / `-b` : (integer) local port to listen; could also specified
 * node / `-n` : (address, optional) one of active node in a cluster; format should be *host:port*; could also set after cerberus launched, via the `SETREMOTES` command, see it below
 * thread / `-t` : (integer) number of threads
-* read-slave / `r` : (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible.  For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB).
+* read-slave / `-r` : (optional, default off) set to "1" to turn on read slave mode. A proxy in read-slave mode won't support writing commands like `SET`, `INCR`, `PUBLISH`, and it would select slave nodes for reading commands if possible. For more information please read [here (CN)](https://github.com/HunanTV/redis-cerberus/wiki/%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB).
+* read-slave-filter / `-R` : (optional, need read-slave set to 1) if multiple slaves replicating one master, use the one whose host starts with this option value; for example, you have `10.0.0.1:7000` as a master, with 2 slave `10.0.1.1:8000` and `10.0.2.1:9000`, and read-slave-filter set to `10.0.1`, then `10.0.1.1:8000` is preferred. Note this option is no more than a string matching, so `10.0.1.1` and `10.0.10.1` won't be different on option value `10.0.1`
 
 The option set via ARGS would override it in the configuration file. For example
 
@@ -63,7 +65,8 @@ Restricted Commands Bypass
 * `MSET` : execute multiple `SET`s
 * `DEL` : execute multiple `DEL`s
 * `RENAME` : if source and destination are not in the same slot, execute a `GET`-`SET`-`DEL` sequence without atomicity
-* `BLPOP` / `BRPOP`: one list limited; might return nil value before timeout [See detail (CN)](https://github.com/HunanTV/redis-cerberus/wiki/BLPOP-And-BRPOP)
+* `BLPOP` / `BRPOP` : one list limited; might return nil value before timeout [See detail (CN)](https://github.com/HunanTV/redis-cerberus/wiki/BLPOP-And-BRPOP)
+* `EVAL` : one key limited; if any key which is not in the same slot with the argument key is in the lua script, a cross slot error would return
 
 Extra Commands
 ---
@@ -83,7 +86,7 @@ Not Implemented
 * pub/sub: `PUBSUB`, `PUNSUBSCRIBE`, `UNSUBSCRIBE`,
 
 others: `PFADD`, `PFCOUNT`, `PFMERGE`,
-`EVAL`, `EVALSHA`, `SCRIPT`,
+`EVALSHA`, `SCRIPT`,
 `WATCH`, `UNWATCH`, `EXEC`, `DISCARD`, `MULTI`,
 `SELECT`, `QUIT`, `ECHO`, `AUTH`,
 `CLUSTER`, `BGREWRITEAOF`, `BGSAVE`, `CLIENT`, `COMMAND`, `CONFIG`,

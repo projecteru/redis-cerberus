@@ -760,7 +760,7 @@ namespace {
         void on_byte(byte) {}
         void on_element(Buffer::iterator)
         {
-            no_arg = false;
+            this->no_arg = false;
         }
 
         explicit SubscribeCommandParser(Buffer::iterator begin)
@@ -771,7 +771,7 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (no_arg) {
+            if (this->no_arg) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'subscribe' command\r\n"));
             }
@@ -800,7 +800,7 @@ namespace {
                 if (s == nullptr) {
                     return this->client->close();
                 }
-                new BlockedListPop(p, this->client->fd, s, std::move(buffer));
+                new BlockedListPop(p, this->client->fd, s, std::move(this->buffer));
                 LOG(DEBUG) << "Convert " << this->client->str() << " as blocked pop";
                 this->client->fd = -1;
             }
@@ -919,7 +919,7 @@ namespace {
         void on_byte(byte) {}
         void on_element(Buffer::iterator)
         {
-            ++arg_count;
+            ++this->arg_count;
         }
 
         explicit PublishCommandParser(Buffer::iterator begin)
@@ -930,12 +930,12 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (arg_count != 2) {
+            if (this->arg_count != 2) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'publish' command\r\n"));
             }
             return util::mkptr(new SingleCommandGroup(
-                c, Buffer(begin, end), util::randint(0, CLUSTER_SLOT_COUNT)));
+                c, Buffer(this->begin, end), util::randint(0, CLUSTER_SLOT_COUNT)));
         }
     };
 
@@ -983,13 +983,13 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (_arg_count != 2 || _error || _slot >= CLUSTER_SLOT_COUNT) {
+            if (this->_arg_count != 2 || this->_error || this->_slot >= CLUSTER_SLOT_COUNT) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong arguments for 'keysinslot' command\r\n"));
             }
             Buffer buffer(Buffer::from_string("*4\r\n$7\r\nCLUSTER\r\n$13\r\nGETKEYSINSLOT\r\n"));
-            buffer.append_from(_arg_start, end);
-            return util::mkptr(new SingleCommandGroup(c, std::move(buffer), _slot));
+            buffer.append_from(this->_arg_start, end);
+            return util::mkptr(new SingleCommandGroup(c, std::move(buffer), this->_slot));
         }
     };
 

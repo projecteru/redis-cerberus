@@ -23,7 +23,7 @@ namespace {
         {
             int ch;
             opterr = 0;
-            while ((ch = getopt(argc, argv, "b:n:t:r:")) != EOF) {
+            while ((ch = getopt(argc, argv, "b:n:t:r:R:")) != EOF) {
                 switch (ch) {
                 case 'b':
                     _config["bind"] = optarg;
@@ -36,6 +36,9 @@ namespace {
                     break;
                 case 'r':
                     _config["read-slave"] = optarg;
+                    break;
+                case 'R':
+                    _config["read-slave-filter"] = optarg;
                     break;
                 default:
                     std::cerr << "Invalid option." << std::endl;
@@ -103,7 +106,7 @@ namespace {
             LOG(INFO) << "Readonly proxy, use slaves for reading if possible";
             cerb::Server::send_readonly_for_each_conn();
             cerb::stats_set_read_slave();
-            cerb::SlotMap::select_slave_if_possible();
+            cerb::SlotMap::select_slave_if_possible(config.get("read-slave-filter", ""));
         } else {
             LOG(INFO) << "Writable proxy";
             cerb::Command::allow_write_commands();
@@ -151,6 +154,9 @@ int main(int argc, char* argv[])
         std::cerr << "    -t THREAD : thread count" << std::endl;
         std::cerr << "    -r READONLY : if the proxy is readonly,"
                            " value shall be 0 or 1 for false or true" << std::endl;
+        std::cerr << "    -R SLAVE_HOST_BEGINING : (if READONLY set to 1)"
+                           " if multiple slaves replicating one master,"
+                           " use the one whose host starts with this pattern" << std::endl;
         std::cerr << "  Options passed by command line will override"
                          " those in the config file" << std::endl;
         return 1;

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <stdexcept>
+#include <cppformat/format.h>
 
 #include "slot_map.hpp"
 #include "server.hpp"
@@ -140,17 +141,25 @@ void cerb::write_slot_map_cmd_to(int fd)
     CLUSTER_NODES_CMD.write(fd);
 }
 
-void SlotMap::select_slave_if_possible()
+void SlotMap::select_slave_if_possible(std::string host_beginning)
 {
     ::replace_map =
-        [](Server* servers[], std::vector<RedisNode> const& nodes, Proxy* proxy)
+        [=](Server* servers[], std::vector<RedisNode> const& nodes, Proxy* proxy)
         {
             std::map<std::string, RedisNode const*> slave_of_map;
             for (auto const& node: nodes) {
                 if (node.is_master()) {
                     continue;
                 }
-                slave_of_map.insert(std::make_pair(node.master_id, &node));
+                auto s = slave_of_map.find(node.master_id);
+                if (s != slave_of_map.end()
+                        && util::stristartswith(s->second->addr.host, host_beginning))
+                {
+                    continue;
+                }
+                LOG(DEBUG) << fmt::format("Use slave {} instead of master {}",
+                                          node.addr.str(), node.master_id);
+                slave_of_map[node.master_id] = &node;
             }
             std::set<Server*> removed;
             std::set<Server*> new_mapped;
@@ -160,9 +169,8 @@ void SlotMap::select_slave_if_possible()
                 }
                 auto slave_i = slave_of_map.find(node.node_id);
                 Server* server = Server::get_server(
-                        slave_i == slave_of_map.end() ? node.addr
-                                                      : slave_i->second->addr,
-                        proxy);
+                    slave_i == slave_of_map.end() ? node.addr : slave_i->second->addr,
+                    proxy);
                 LOG(DEBUG) << "Select " << server->addr.str() << " for " << node.addr.str();
                 for (auto const& rg: node.slot_ranges) {
                     for (slot s = rg.first; s <= rg.second; ++s) {
