@@ -840,6 +840,76 @@ namespace {
         }
     };
 
+    class EvalCommandParser
+        : public SpecialCommandParser
+    {
+        Buffer::iterator begin;
+        KeySlotCalc slot_calc;
+
+        int arg_count;
+        std::vector<byte> count_bytes;
+        int key_count;
+
+        std::function<void(EvalCommandParser*, byte)> _on_byte;
+
+        static void skip_byte(EvalCommandParser*, byte) {}
+
+        static void get_key_count(EvalCommandParser* me, byte b)
+        {
+            me->count_bytes.push_back(b);
+        }
+
+        static void key_calc(EvalCommandParser* me, byte b)
+        {
+            me->slot_calc.next_byte(b);
+        }
+    public:
+        void on_byte(byte b)
+        {
+            this->_on_byte(this, b);
+        }
+
+        void on_element(Buffer::iterator)
+        {
+            switch (arg_count) {
+                case 0:
+                    this->_on_byte = EvalCommandParser::get_key_count;
+                    break;
+                case 1:
+                    {
+                        count_bytes.push_back('\r');
+                        count_bytes.push_back('\n');
+                        auto r = cerb::msg::btoi(count_bytes.begin(), count_bytes.end());
+                        this->key_count = r.first;
+                        this->_on_byte = EvalCommandParser::key_calc;
+                    }
+                    break;
+                default:
+                    this->_on_byte = EvalCommandParser::skip_byte;
+                    break;
+            }
+            ++arg_count;
+        }
+
+        explicit EvalCommandParser(Buffer::iterator begin)
+            : begin(begin)
+            , arg_count(0)
+            , key_count(0)
+            , _on_byte(EvalCommandParser::skip_byte)
+        {}
+
+        util::sptr<CommandGroup> spawn_commands(
+            util::sref<Client> c, Buffer::iterator end)
+        {
+            if (arg_count < 3 || key_count != 1) {
+                return util::mkptr(new DirectCommandGroup(
+                    c, "-ERR wrong number of arguments for 'eval' command\r\n"));
+            }
+            return util::mkptr(new SingleCommandGroup(
+                c, Buffer(begin, end), this->slot_calc.get_slot()));
+        }
+    };
+
     class PublishCommandParser
         : public SpecialCommandParser
     {
@@ -1239,6 +1309,11 @@ void Command::allow_write_commands()
             [](Buffer::iterator command_begin, Buffer::iterator)
             {
                 return util::mkptr(new BlockedListPopParser(command_begin));
+            }},
+        {"EVAL",
+            [](Buffer::iterator command_begin, Buffer::iterator)
+            {
+                return util::mkptr(new EvalCommandParser(command_begin));
             }},
     });
     for (auto const& c: SPECIAL_WRITE_COMMAND) {
