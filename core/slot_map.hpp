@@ -84,7 +84,7 @@ namespace cerb {
         void clear();
         Server* random_addr() const;
 
-        static void select_slave_if_possible();
+        static void select_slave_if_possible(std::string host_beginning);
     };
 
     std::vector<RedisNode> parse_slot_map(std::string const& nodes_info,

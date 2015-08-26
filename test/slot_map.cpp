@@ -315,7 +315,7 @@ TEST_F(SlotMapTest, ReplaceNodesAllMasters)
 
 TEST_F(SlotMapTest, ReplaceNodesAlsoSlave)
 {
-    cerb::SlotMap::select_slave_if_possible();
+    cerb::SlotMap::select_slave_if_possible("");
     cerb::SlotMap slot_map;
 
     slot_map.replace_map(cerb::parse_slot_map(
