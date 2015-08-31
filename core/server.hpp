@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 
+#include "proxy.hpp"
 #include "buffer.hpp"
 #include "connection.hpp"
 #include "utils/pointer.h"
@@ -11,7 +12,6 @@
 
 namespace cerb {
 
-    class Proxy;
     class Client;
     class DataCommand;
 
@@ -65,11 +65,13 @@ namespace cerb {
         void attach_long_connection(ProxyConnection* c)
         {
             this->attached_long_connections.insert(c);
+            this->_proxy->incr_long_conn();
         }
 
         void detach_long_connection(ProxyConnection* c)
         {
             this->attached_long_connections.erase(c);
+            this->_proxy->decr_long_conn();
         }
     };
 

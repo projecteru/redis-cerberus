@@ -91,6 +91,7 @@ std::string SlotsMapUpdater::str() const
 
 Proxy::Proxy()
     : _clients_count(0)
+    , _long_conns_count(0)
     , _total_cmd_elapse(0)
     , _total_remote_cost(0)
     , _total_cmd(0)
