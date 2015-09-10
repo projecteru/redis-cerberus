@@ -53,5 +53,15 @@ class ScriptTest(unittest.TestCase):
             self.assertEqual([c + b for b in p], self.t.talk_bulk(
                 [['get', '.' + b + c] for b in p]))
 
+    def test_large_pipes(self):
+        r = self.t.talk_bulk([['set', 'Key:%016d' % i, 'Value:%026d' % i]
+                              for i in xrange(1000)])
+        self.assertEqual(['OK'] * 1000, r)
+        r = self.t.talk_bulk([['gEt', 'Key:%016d' % i] for i in xrange(2000)])
+        self.assertEqual(2000, len(r))
+        self.assertEqual(['Value:%026d' % i for i in xrange(1000)], r[:1000])
+        self.assertEqual([None] * 1000, r[1000:])
+
+
 if __name__ == '__main__':
     main()

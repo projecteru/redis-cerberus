@@ -1209,7 +1209,7 @@ namespace {
             /*
              * Redis server will reset a request of more than 1M args.
              * See also
-             * https://github.com/antirez/redis/blob/3.0/src/networking.c#L1014
+             * https://github.com/antirez/redis/blob/3.0/src/networking.c#L1001
              */
             if (size > 1024 * 1024) {
                 throw BadRedisMessage("Request is too large");

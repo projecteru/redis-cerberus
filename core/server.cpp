@@ -60,7 +60,7 @@ void Server::_send_to()
         return;
     }
 
-    this->_ready_commands = std::move(this->_commands);
+    this->_ready_commands.swap(this->_commands);
     for (util::sref<DataCommand> c: this->_ready_commands) {
         this->_output_buffer_set.append(util::mkref(c->buffer));
     }
