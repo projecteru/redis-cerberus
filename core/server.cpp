@@ -100,8 +100,13 @@ void Server::_recv_from()
             c->resp_time = now;
         }
     }
-    this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
-    this->_proxy->set_conn_poll_ro(this);
+    if (cmd_it == this->_ready_commands.end() && !this->_commands.empty()) {
+        this->_ready_commands.clear();
+        this->_proxy->set_conn_poll_rw(this);
+    } else {
+        this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
+        this->_proxy->set_conn_poll_ro(this);
+    }
 }
 
 void Server::push_client_command(util::sref<DataCommand> cmd)

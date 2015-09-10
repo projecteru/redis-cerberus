@@ -365,3 +365,72 @@ TEST_F(EventLoopProxyDateTest, ServerResets)
     ASSERT_EQ("$7\r\nGoliath\r\n", EventLoopTest::get_written_of(client, 0));
     ASSERT_EQ("$6\r\nEmirin\r\n", EventLoopTest::get_written_of(client, 1));
 }
+
+TEST_F(EventLoopProxyDateTest, PipeToClient)
+{
+    std::vector<RedisNode> nodes;
+    RedisNode x(util::Address("10.0.0.1", 9000), "9229fac91ce334be742f473c8a30eb4139291a90");
+    x.slot_ranges.insert(std::make_pair(0, 16383));
+    nodes.push_back(std::move(x));
+    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+
+    Server* server = EventLoopTest::proxy->get_server_by_slot(0);
+    ASSERT_NE(nullptr, server);
+    int client = EventLoopTest::connect_client();
+
+    EventLoopTest::push_read_of(client, format_command("GET", {"developer"}));
+    EventLoopTest::run_all_polls();
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(client));
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(format_command("GET", {"developer"}), EventLoopTest::get_written_of(server->fd, 0));
+
+    EventLoopTest::push_read_of(client, format_command("GET", {"goblin"}));
+    EventLoopTest::run_all_polls();
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(client));
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(format_command("GET", {"developer"}), EventLoopTest::get_written_of(server->fd, 0));
+    EventLoopTest::clear_buffer_of(server->fd);
+
+    EventLoopTest::push_read_of(server->fd, "$4\r\nMoss\r\n");
+    EventLoopTest::run_all_polls();
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(client));
+    ASSERT_EQ("$4\r\nMoss\r\n", EventLoopTest::get_written_of(client, 0));
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(format_command("GET", {"goblin"}), EventLoopTest::get_written_of(server->fd, 0));
+}
+
+TEST_F(EventLoopProxyDateTest, ClientsGather)
+{
+    std::vector<RedisNode> nodes;
+    RedisNode x(util::Address("10.0.0.1", 9000), "9229fac91ce334be742f473c8a30eb4139291a90");
+    x.slot_ranges.insert(std::make_pair(0, 16383));
+    nodes.push_back(std::move(x));
+    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+
+    Server* server = EventLoopTest::proxy->get_server_by_slot(0);
+    ASSERT_NE(nullptr, server);
+    int client_a = EventLoopTest::connect_client();
+    int client_b = EventLoopTest::connect_client();
+
+    EventLoopTest::push_read_of(client_a, format_command("GET", {"developer"}));
+    EventLoopTest::run_all_polls();
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(client_a));
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(client_b));
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(format_command("GET", {"developer"}), EventLoopTest::get_written_of(server->fd, 0));
+
+    EventLoopTest::push_read_of(client_b, format_command("GET", {"goblin"}));
+    EventLoopTest::run_all_polls();
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(client_a));
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(client_b));
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(format_command("GET", {"developer"}), EventLoopTest::get_written_of(server->fd, 0));
+    EventLoopTest::clear_buffer_of(server->fd);
+
+    EventLoopTest::push_read_of(server->fd, "$4\r\nMoss\r\n");
+    EventLoopTest::run_all_polls();
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(client_a));
+    ASSERT_EQ("$4\r\nMoss\r\n", EventLoopTest::get_written_of(client_a, 0));
+    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(format_command("GET", {"goblin"}), EventLoopTest::get_written_of(server->fd, 0));
+}

@@ -35,10 +35,11 @@ int AutomaticPoller::poll_wait(poll::pevent events[], int maxevents)
 {
     this->last_pollees.clear();
     int count = 0;
-    for (auto i: this->pollees) {
+    for (auto& i: this->pollees) {
         int flags = 0;
         if (this->event_is_write(i.second)) {
             flags = EV_WRITE;
+            i.second = EV_READ;
         }
         if (!buffers->buffers[i.first].read_buffer.empty()) {
             flags |= EV_READ;

@@ -447,7 +447,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     for (int i = PIPE_Y; i < PIPE_Z; ++i) {
         ASSERT_EQ(requests_z[i], ServerClientTest::io_obj->write_buffer[i - PIPE_Y]);
     }
-    ASSERT_RO_CONN(server);
+    ASSERT_RW_CONN(server);
     ServerClientTest::io_obj->write_buffer.clear();
 
     for (int i = 0; i < PIPE_Y; ++i) {
@@ -489,7 +489,7 @@ TEST_F(ServerClientTest, MultipleClientsPipelineTest)
     for (int i = PIPE_Y; i < PIPE_Z; ++i) {
         ASSERT_RW_CONN(clients[i]);
     }
-    ASSERT_RO_CONN(server);
+    ASSERT_RW_CONN(server);
     ASSERT_EQ(PIPE_Y, ServerClientTest::io_obj->write_buffer.size());
     for (int i = 0; i < PIPE_Y; ++i) {
         ASSERT_EQ(requests_z[i], ServerClientTest::io_obj->write_buffer[i]);
