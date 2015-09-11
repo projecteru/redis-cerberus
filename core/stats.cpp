@@ -1,3 +1,5 @@
+#include <sys/resource.h>
+
 #include "stats.hpp"
 #include "globals.hpp"
 #include "utils/string.h"
@@ -8,7 +10,11 @@ static bool read_slave = false;
 
 std::string cerb::stats_all()
 {
+    struct rusage res_usage;
+    getrusage(RUSAGE_SELF, &res_usage);
+
     std::vector<std::string> clients_counts;
+    std::vector<std::string> long_conns_counts;
     std::vector<std::string> mem_buffer_allocs;
     std::vector<std::string> last_cmd_elapse;
     std::vector<std::string> last_remote_cost;
@@ -18,6 +24,7 @@ std::string cerb::stats_all()
     for (auto const& thread: cerb_global::all_threads) {
         util::sref<Proxy const> proxy(thread.get_proxy());
         clients_counts.push_back(util::str(proxy->clients_count()));
+        long_conns_counts.push_back(util::str(proxy->long_conns_count()));
         total_commands += proxy->total_cmd();
         total_cmd_elapse += proxy->total_cmd_elapse();
         total_remote_cost += proxy->total_remote_cost();
@@ -34,6 +41,11 @@ std::string cerb::stats_all()
         "\nthreads:", util::str(msize_t(cerb_global::all_threads.size())),
         "\nread_slave:", ::read_slave ? "1" : "0",
         "\nclients_count:", util::join(",", clients_counts),
+        "\nlong_connections_count:", util::join(",", long_conns_counts),
+        "\nused_cpu_sys:", util::str(res_usage.ru_stime.tv_sec +
+                                     res_usage.ru_stime.tv_usec / 1000000.0),
+        "\nused_cpu_user:", util::str(res_usage.ru_utime.tv_sec +
+                                      res_usage.ru_utime.tv_usec / 1000000.0),
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
         "\ncompleted_commands:", util::str(total_commands),
         "\ntotal_process_elapse:", util::str(total_cmd_elapse),

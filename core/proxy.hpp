@@ -36,6 +36,7 @@ namespace cerb {
 
     class Proxy {
         int _clients_count;
+        int _long_conns_count;
 
         SlotMap _server_map;
         std::vector<util::sptr<SlotsMapUpdater>> _slot_updaters;
@@ -77,6 +78,21 @@ namespace cerb {
         int clients_count() const
         {
             return _clients_count;
+        }
+
+        void incr_long_conn()
+        {
+            ++this->_long_conns_count;
+        }
+
+        void decr_long_conn()
+        {
+            --this->_long_conns_count;
+        }
+
+        int long_conns_count() const
+        {
+            return this->_long_conns_count;
         }
 
         long total_cmd() const
