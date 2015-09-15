@@ -18,7 +18,7 @@ TEST_F(EventLoopLongConnectionTest, BlockedPops)
     RedisNode y(util::Address("10.0.0.1", 9001), "a34bf47213eb4a908a309223c742c991cee1399f");
     nodes.push_back(std::move(x));
     nodes.push_back(std::move(y));
-    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+    EventLoopTest::update_slots_map(nodes);
 
     Server* server9000 = EventLoopTest::proxy->get_server_by_slot(0);
     ASSERT_NE(nullptr, server9000);
