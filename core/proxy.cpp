@@ -18,6 +18,7 @@ using namespace cerb;
 SlotsMapUpdater::SlotsMapUpdater(util::Address a, Proxy* p)
     : Connection(fctl::new_stream_socket())
     , _proxy(p)
+    , _proxy_already_updated(false)
     , addr(std::move(a))
 {
     LOG(DEBUG) << "Create " << this->str();
@@ -49,9 +50,23 @@ void SlotsMapUpdater::_recv_rsp()
                               util::str(int(rsp.size())));
     }
     LOG(DEBUG) << "*Updated from " << this->str();
-    this->close();
-    _proxy->notify_slot_map_updated(
-        parse_slot_map(rsp[0]->get_buffer().to_string(), this->addr.host));
+    this->_nodes = parse_slot_map(rsp[0]->get_buffer().to_string(), this->addr.host);
+
+    for (RedisNode const& node: this->_nodes) {
+        if (node.addr.host.empty()) {
+            LOG(INFO) << fmt::format("Discard result of {} because address is empty string :{}",
+                                     this->str(), node.addr.port);
+            continue;
+        }
+        for (auto const& begin_end: node.slot_ranges) {
+            for (slot s = begin_end.first; s <= begin_end.second; ++s) {
+                this->_covered_slots.insert(s);
+            }
+        }
+        this->_remotes.insert(node.addr);
+    }
+
+    this->_notify_updated();
 }
 
 void SlotsMapUpdater::on_events(int events)
@@ -59,8 +74,7 @@ void SlotsMapUpdater::on_events(int events)
     if (poll::event_is_hup(events)) {
         LOG(ERROR) << "Failed to retrieve slot map from " << this->str()
                    << ". Closed because remote hung up.";
-        this->close();
-        return _proxy->notify_slot_map_updated({});
+        return this->_notify_updated();
     }
     if (poll::event_is_write(events)) {
         return this->_send_cmd();
@@ -71,16 +85,18 @@ void SlotsMapUpdater::on_events(int events)
         } catch (BadRedisMessage& e) {
             LOG(ERROR) << "Receive bad message from server on update from "
                        << this->str() << " because " << e.what();
-            this->close();
-            return _proxy->notify_slot_map_updated({});
+            return this->_notify_updated();
         }
     }
 }
 
-void SlotsMapUpdater::on_error()
+void SlotsMapUpdater::_notify_updated()
 {
     this->close();
-    _proxy->notify_slot_map_updated({});
+    if (!this->_proxy_already_updated) {
+        this->_proxy->notify_slot_map_updated(this->get_nodes(), this->_remotes,
+                                              this->_covered_slots.size());
+    }
 }
 
 std::string SlotsMapUpdater::str() const
@@ -106,25 +122,25 @@ Proxy::~Proxy()
     cio::close(epfd);
 }
 
-void Proxy::_set_slot_map(std::vector<RedisNode> map, std::set<util::Address> remotes)
+void Proxy::_set_slot_map(std::vector<RedisNode> const& map,
+                          std::set<util::Address> const& remotes)
 {
     _server_map.replace_map(map, this);
     _slot_map_expired = false;
     cerb_global::set_remotes(std::move(remotes));
     LOG(INFO) << "Slot map updated";
+    LOG(DEBUG) << "Retry MOVED or ASK: " << this->_retrying_commands.size();
     if (this->_retrying_commands.empty()) {
         return;
     }
 
-    LOG(DEBUG) << "Retry MOVED or ASK: " << this->_retrying_commands.size();
     std::set<Server*> svrs;
     std::vector<util::sref<DataCommand>> retrying(std::move(this->_retrying_commands));
     for (util::sref<DataCommand> cmd: retrying) {
         Server* s = cmd->select_server(this);
         if (s == nullptr) {
-            LOG(ERROR) << "Select null server after slot map updated";
+            LOG(DEBUG) << "Select null server after slot map updated";
             _slot_map_expired = true;
-            _retrying_commands.push_back(cmd);
             continue;
         }
         svrs.insert(s);
@@ -142,6 +158,25 @@ void Proxy::_update_slot_map_failed()
             return;
         }
     }
+    LOG(DEBUG) << fmt::format("{} updaters all closed", this->_slot_updaters.size());
+
+    if (!cerb_global::cluster_req_full_cov() && !this->_slot_updaters.empty()) {
+        LOG(DEBUG) << fmt::format("Doesn't request full coverage, try {} updaters", this->_slot_updaters.size());
+        util::sptr<SlotsMapUpdater> const& candidate_updater = *util::max_element(
+            this->_slot_updaters,
+            [](util::sptr<SlotsMapUpdater> const& u)
+            {
+                return u->covered_slots();
+            });
+
+        LOG(DEBUG) << fmt::format("Cluster contains {} slots", candidate_updater->covered_slots());
+        if (candidate_updater->covered_slots() != 0) {
+            this->_set_slot_map(candidate_updater->get_nodes(),
+                                       candidate_updater->get_remotes());
+            return this->_move_closed_slot_updaters();
+        }
+    }
+
     this->_move_closed_slot_updaters();
     LOG(DEBUG) << "Failed to retrieve slot map, discard all commands.";
     _server_map.clear();
@@ -174,27 +209,14 @@ void Proxy::_retrieve_slot_map()
     }
 }
 
-void Proxy::notify_slot_map_updated(std::vector<RedisNode> nodes)
+void Proxy::notify_slot_map_updated(std::vector<RedisNode> const& nodes,
+                                    std::set<util::Address> const& remotes, msize_t covered_slots)
 {
-    std::set<util::Address> remotes;
-    std::set<slot> covered_slots;
-    for (RedisNode const& node: nodes) {
-        if (node.addr.host.empty()) {
-            LOG(INFO) << "Discard result because address is empty string :" << node.addr.port;
-            return this->_update_slot_map_failed();
-        }
-        for (auto const& begin_end: node.slot_ranges) {
-            for (slot s = begin_end.first; s <= begin_end.second; ++s) {
-                covered_slots.insert(s);
-            }
-        }
-        remotes.insert(node.addr);
-    }
-    if (covered_slots.size() < CLUSTER_SLOT_COUNT) {
-        LOG(INFO) << "Discard result because only " << covered_slots.size() << " slots covered";
+    if (covered_slots < CLUSTER_SLOT_COUNT) {
+        LOG(INFO) << fmt::format("Discard result because only {} slots covered", covered_slots);
         return this->_update_slot_map_failed();
     }
-    this->_set_slot_map(std::move(nodes), std::move(remotes));
+    this->_set_slot_map(nodes, remotes);
     this->_move_closed_slot_updaters();
 }
 
@@ -216,6 +238,7 @@ void Proxy::_move_closed_slot_updaters()
      * because _finished_slot_updaters may still contains some closed connections
      */
     for (auto& u: this->_slot_updaters) {
+        u->proxy_updated();
         this->_finished_slot_updaters.push_back(std::move(u));
     }
     this->_slot_updaters.clear();
