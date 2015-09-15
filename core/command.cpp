@@ -944,7 +944,7 @@ namespace {
     {
         Buffer::iterator _arg_start;
         int _arg_count;
-        int _slot;
+        slot _slot;
         bool _error;
 
         std::function<void(KeysInSlotParser*, byte)> _on_byte;

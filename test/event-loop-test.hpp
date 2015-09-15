@@ -143,6 +143,16 @@ struct EventLoopTest
             ;
     }
 
+    static void update_slots_map(std::vector<cerb::RedisNode> const& nodes,
+                                 cerb::msize_t covered_slots=cerb::CLUSTER_SLOT_COUNT)
+    {
+        std::set<util::Address> remotes;
+        for (auto const& n: nodes) {
+            remotes.insert(n.addr);
+        }
+        EventLoopTest::proxy->notify_slot_map_updated(nodes, remotes, covered_slots);
+    }
+
     void SetUp();
     void TearDown();
 };

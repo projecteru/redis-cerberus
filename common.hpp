@@ -18,7 +18,7 @@ namespace cerb {
     typedef Clock::time_point Time;
     typedef std::chrono::duration<double> Interval;
 
-    int const CLUSTER_SLOT_COUNT = 16384;
+    msize_t const CLUSTER_SLOT_COUNT = 16384;
 
 }
 

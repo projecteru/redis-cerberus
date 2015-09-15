@@ -17,6 +17,9 @@ namespace cerb_global {
     void set_remotes(std::set<util::Address> remotes);
     std::set<util::Address> get_remotes();
 
+    void set_cluster_req_full_cov(bool c);
+    bool cluster_req_full_cov();
+
 }
 
 #endif /* __CERBERUS_GLOBALS_HPP__ */

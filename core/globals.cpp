@@ -1,3 +1,4 @@
+#include <atomic>
 #include <mutex>
 
 #include "globals.hpp"
@@ -18,4 +19,16 @@ std::set<util::Address> cerb_global::get_remotes()
 {
     std::lock_guard<std::mutex> _(::remote_addrs_mutex);
     return ::remote_addrs;
+}
+
+static std::atomic_bool req_full_cov(true);
+
+void cerb_global::set_cluster_req_full_cov(bool c)
+{
+    ::req_full_cov = c;
+}
+
+bool cerb_global::cluster_req_full_cov()
+{
+    return ::req_full_cov;
 }

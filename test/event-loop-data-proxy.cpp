@@ -58,7 +58,7 @@ TEST_F(EventLoopProxyDateTest, GeneralGet)
     RedisNode x(util::Address("10.0.0.1", 8000), "34bf473c742c91cee391a908a30eb413929229fa");
     x.slot_ranges.insert(std::make_pair(0, 16383));
     nodes.push_back(std::move(x));
-    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+    EventLoopTest::update_slots_map(nodes);
 
     int client = EventLoopTest::connect_client();
     EventLoopTest::push_read_of(client, format_command("GET", {"hello"}));
@@ -318,7 +318,7 @@ TEST_F(EventLoopProxyDateTest, ServerResets)
     y.slot_ranges.insert(std::make_pair(8192, 16383));
     nodes.push_back(std::move(x));
     nodes.push_back(std::move(y));
-    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+    EventLoopTest::update_slots_map(nodes);
 
     Server* server_a = EventLoopTest::proxy->get_server_by_slot(0);
     Server* server_b = EventLoopTest::proxy->get_server_by_slot(8192);
@@ -372,7 +372,7 @@ TEST_F(EventLoopProxyDateTest, PipeToClient)
     RedisNode x(util::Address("10.0.0.1", 9000), "9229fac91ce334be742f473c8a30eb4139291a90");
     x.slot_ranges.insert(std::make_pair(0, 16383));
     nodes.push_back(std::move(x));
-    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+    EventLoopTest::update_slots_map(nodes);
 
     Server* server = EventLoopTest::proxy->get_server_by_slot(0);
     ASSERT_NE(nullptr, server);
@@ -405,7 +405,7 @@ TEST_F(EventLoopProxyDateTest, ClientsGather)
     RedisNode x(util::Address("10.0.0.1", 9000), "9229fac91ce334be742f473c8a30eb4139291a90");
     x.slot_ranges.insert(std::make_pair(0, 16383));
     nodes.push_back(std::move(x));
-    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+    EventLoopTest::update_slots_map(nodes);
 
     Server* server = EventLoopTest::proxy->get_server_by_slot(0);
     ASSERT_NE(nullptr, server);

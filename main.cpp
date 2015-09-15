@@ -102,7 +102,7 @@ namespace {
 
     void run(Configuration const& config)
     {
-        if (config.get("read-slave", "") == "1") {
+        if (config.get("read-slave", "") == "yes") {
             LOG(INFO) << "Readonly proxy, use slaves for reading if possible";
             cerb::Server::send_readonly_for_each_conn();
             cerb::stats_set_read_slave();
@@ -110,6 +110,11 @@ namespace {
         } else {
             LOG(INFO) << "Writable proxy";
             cerb::Command::allow_write_commands();
+        }
+
+        if (config.get("cluster-require-full-coverage") == "no") {
+            LOG(INFO) << "Proxy won't require full slots coverage.";
+            cerb_global::set_cluster_req_full_cov(false);
         }
 
         int bind_port = util::atoi(config.get("bind"));

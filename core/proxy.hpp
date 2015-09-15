@@ -20,18 +20,47 @@ namespace cerb {
     {
         Proxy* _proxy;
         Buffer _rsp;
+        std::vector<RedisNode> _nodes;
+        std::set<util::Address> _remotes;
+        std::set<slot> _covered_slots;
+        bool _proxy_already_updated;
 
         void _send_cmd();
         void _recv_rsp();
         void _await_data();
+        void _notify_updated();
     public:
         util::Address const addr;
 
         SlotsMapUpdater(util::Address addr, Proxy* p);
 
+        void on_error()
+        {
+            this->_notify_updated();
+        }
+
         void on_events(int events);
-        void on_error();
         std::string str() const;
+
+        std::vector<RedisNode> const& get_nodes() const
+        {
+            return this->_nodes;
+        }
+
+        std::set<util::Address> const& get_remotes() const
+        {
+            return this->_remotes;
+        }
+
+        msize_t covered_slots() const
+        {
+            return this->_covered_slots.size();
+        }
+
+        void proxy_updated()
+        {
+            this->_proxy_already_updated = true;
+        }
     };
 
     class Proxy {
@@ -53,7 +82,8 @@ namespace cerb {
 
         bool _should_update_slot_map() const;
         void _retrieve_slot_map();
-        void _set_slot_map(std::vector<RedisNode> map, std::set<util::Address> remotes);
+        void _set_slot_map(std::vector<RedisNode> const& map,
+                           std::set<util::Address> const& remotes);
         void _update_slot_map_failed();
         void _update_slot_map();
         void _move_closed_slot_updaters();
@@ -126,7 +156,9 @@ namespace cerb {
         }
 
         Server* get_server_by_slot(slot key_slot);
-        void notify_slot_map_updated(std::vector<RedisNode> nodes);
+        void notify_slot_map_updated(std::vector<RedisNode> const& nodes,
+                                     std::set<util::Address> const& remotes,
+                                     msize_t covered_slots);
         void update_slot_map();
         void retry_move_ask_command_later(util::sref<DataCommand> cmd);
         void inactivate_long_conn(Connection* conn);
