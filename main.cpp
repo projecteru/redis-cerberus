@@ -112,7 +112,7 @@ namespace {
             cerb::Command::allow_write_commands();
         }
 
-        if (config.get("cluster-require-full-coverage") == "no") {
+        if (config.get("cluster-require-full-coverage", "") == "no") {
             LOG(INFO) << "Proxy won't require full slots coverage.";
             cerb_global::set_cluster_req_full_cov(false);
         }
