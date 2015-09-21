@@ -18,7 +18,7 @@ TEST_F(EventLoopSlotMapUpdatingTest, ServerReadAfterUpdateFailed)
     y.slot_ranges.insert(std::make_pair(1, 16383));
     nodes.push_back(std::move(x));
     nodes.push_back(std::move(y));
-    EventLoopTest::proxy->notify_slot_map_updated(std::move(nodes));
+    EventLoopTest::update_slots_map(nodes);
 
     Server* server_a = EventLoopTest::proxy->get_server_by_slot(0);
     Server* server_b = EventLoopTest::proxy->get_server_by_slot(1);

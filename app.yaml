@@ -1,0 +1,16 @@
+appname: "cerberus"
+entrypoints:
+  macvlan:
+    cmd: "/usr/local/bin/cerberus example.conf"
+  host:
+    cmd: "/usr/local/bin/cerberus example.conf"
+    network_mode: "host"
+build:
+  - "apt-get install cmake -y"
+  - "make COMPILER=g++"
+  - "mkdir -p /var/lib/cerberus"
+  - "chmod 777 /var/lib/cerberus"
+  - "cp example.conf /var/lib/cerberus"
+  - "cp ./cerberus /usr/local/bin/"
+  - "rm -rf ./*"
+  - "cp /var/lib/cerberus/* ./"

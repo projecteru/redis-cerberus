@@ -25,12 +25,12 @@ core-objs:
 	    COMPILER=$(COMPILER) CANDIDATE_IO=1 CANDIDATE_POLL=1 CANDIDATE_FCTL=1
 
 util-test:message.dt response.dt buffer.dt slot_calc.dt mock-io.dt mock-suit \
-          mock-server.dt mock-proxy.dt
+          mock-server.dt mock-proxy.dt alg.dt
 	$(LINK) $(TESTDIR)/message.o $(TESTDIR)/response.o $(TESTDIR)/slot_calc.o \
 	        $(OBJDIR)/buffer.o $(OBJDIR)/slot_calc.o $(OBJDIR)/message.o \
 	        $(OBJDIR)/slot_map.o $(OBJDIR)/response.o $(OBJDIR)/connection.o \
 	        $(OBJDIR)/fdutil.o utils/*.o $(TESTDIR)/mock-proxy.o $(MOCK_OBJS) \
-	        $(TESTDIR)/mock-server.o $(TEST_LIBS) \
+	        $(TESTDIR)/mock-server.o $(TESTDIR)/alg.o $(TEST_LIBS) \
 	     -o $(TESTDIR)/test-utils.out
 	$(VALGRIND) $(TESTDIR)/test-utils.out
 
