@@ -35,6 +35,11 @@ struct MultipleBuffersIO
     {
         return ++this->last_fd;
     }
+
+    void push_writing_size(int fd, int sz)
+    {
+        buffers[fd].writing_sizes.push_back(sz);
+    }
 };
 
 struct AutomaticPoller

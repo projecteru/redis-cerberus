@@ -182,7 +182,7 @@ void Proxy::_update_slot_map_failed()
     _server_map.clear();
     std::vector<util::sref<DataCommand>> cmds(std::move(this->_retrying_commands));
     for (util::sref<DataCommand> c: cmds) {
-        c->on_remote_responsed(Buffer::from_string("-CLUSTERDOWN The cluster is down\r\n"), true);
+        c->on_remote_responsed(Buffer("-CLUSTERDOWN The cluster is down\r\n"), true);
     }
     _slot_map_expired = false;
 }

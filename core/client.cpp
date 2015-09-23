@@ -96,7 +96,7 @@ void Client::_write_response()
         return;
     }
 
-    this->_ready_groups = std::move(this->_awaiting_groups);
+    this->_ready_groups.swap(this->_awaiting_groups);
     for (auto const& g: this->_ready_groups) {
         g->append_buffer_to(this->_output_buffer_set);
     }

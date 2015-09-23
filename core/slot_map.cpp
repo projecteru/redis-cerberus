@@ -134,11 +134,11 @@ std::vector<RedisNode> cerb::parse_slot_map(std::string const& nodes_info,
     return std::move(slot_map);
 }
 
-static cerb::Buffer const CLUSTER_NODES_CMD(Buffer::from_string("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n"));
+static std::string const CLUSTER_NODES_CMD("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
 
 void cerb::write_slot_map_cmd_to(int fd)
 {
-    CLUSTER_NODES_CMD.write(fd);
+    flush_string(fd, CLUSTER_NODES_CMD);
 }
 
 void SlotMap::select_slave_if_possible(std::string host_beginning)

@@ -32,6 +32,7 @@ ssize_t CIOImplement::writev(int fd, cio::iovec const* iov, int iovcnt)
 {
     ssize_t n = 0;
     for (int i = 0; i < iovcnt; ++i) {
+        EXPECT_LE(iov[i].iov_len, 0xFFFFFF);
         ssize_t s = this->write(fd, iov[i].iov_base, iov[i].iov_len);
         if (-1 == s) {
             return n ? n : -1;

@@ -9,14 +9,14 @@ using cerb::split_server_response;
 TEST(Response, String)
 {
     {
-        Buffer b(Buffer::from_string("+OK\r\n"));
+        Buffer b("+OK\r\n");
         std::vector<util::sptr<Response>> r(split_server_response(b));
         ASSERT_TRUE(b.empty());
         ASSERT_EQ(1, r.size());
         ASSERT_EQ("+OK\r\n", r[0]->get_buffer().to_string());
     }
     {
-        Buffer b(Buffer::from_string("$2\r\nOK\r\n$4\r\nabcd\r\n"));
+        Buffer b("$2\r\nOK\r\n$4\r\nabcd\r\n");
         std::vector<util::sptr<Response>> r(split_server_response(b));
         ASSERT_TRUE(b.empty());
         ASSERT_EQ(2, r.size());
@@ -28,8 +28,7 @@ TEST(Response, String)
 TEST(Response, Array)
 {
     {
-        Buffer b(Buffer::from_string("+OK\r\n"
-                                     "*0\r\n"));
+        Buffer b("+OK\r\n" "*0\r\n");
         std::vector<util::sptr<Response>> r(split_server_response(b));
         ASSERT_TRUE(b.empty());
         ASSERT_EQ(2, r.size());
@@ -37,10 +36,10 @@ TEST(Response, Array)
         ASSERT_EQ("*0\r\n", r[1]->get_buffer().to_string());
     }
     {
-        Buffer b(Buffer::from_string("+OK\r\n"
-                                     "*2\r\n"
-                                         "$1\r\na\r\n"
-                                         "$1\r\nb\r\n"));
+        Buffer b("+OK\r\n"
+                 "*2\r\n"
+                     "$1\r\na\r\n"
+                     "$1\r\nb\r\n");
         std::vector<util::sptr<Response>> r(split_server_response(b));
         ASSERT_TRUE(b.empty());
         ASSERT_EQ(2, r.size());

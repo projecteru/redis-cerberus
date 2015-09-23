@@ -33,42 +33,25 @@ void Server::on_events(int events)
             exit(1);
         }
     }
-    if (poll::event_is_write(events)) {
-        this->_send_to();
-    }
-}
 
-void Server::_send_buffer_set()
-{
-    if (this->_output_buffer_set.writev(this->fd)) {
+    this->_push_to_buffer_set();
+    if (this->_output_buffer_set.empty()) {
         this->_proxy->set_conn_poll_ro(this);
     } else {
         this->_proxy->set_conn_poll_rw(this);
     }
 }
 
-void Server::_send_to()
+void Server::_push_to_buffer_set()
 {
-    if (!this->_output_buffer_set.empty()) {
-        return this->_send_buffer_set();
-    }
-    if (this->_commands.empty()) {
-        this->_proxy->set_conn_poll_ro(this);
-    }
-    if (!this->_ready_commands.empty()) {
-        LOG(DEBUG) << "+busy";
-        return;
-    }
-
-    this->_ready_commands.swap(this->_commands);
-    for (util::sref<DataCommand> c: this->_ready_commands) {
-        this->_output_buffer_set.append(util::mkref(c->buffer));
-    }
-    this->_send_buffer_set();
     auto now = Clock::now();
-    for (util::sref<DataCommand> c: this->_ready_commands) {
+    for (util::sref<DataCommand> c: this->_commands) {
+        this->_ready_commands.push_back(c);
+        this->_output_buffer_set.append(c->buffer);
         c->sent_time = now;
     }
+    this->_output_buffer_set.writev(this->fd);
+    this->_commands.clear();
 }
 
 void Server::_recv_from()
@@ -100,13 +83,7 @@ void Server::_recv_from()
             c->resp_time = now;
         }
     }
-    if (cmd_it == this->_ready_commands.end() && !this->_commands.empty()) {
-        this->_ready_commands.clear();
-        this->_proxy->set_conn_poll_rw(this);
-    } else {
-        this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
-        this->_proxy->set_conn_poll_ro(this);
-    }
+    this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
 }
 
 void Server::push_client_command(util::sref<DataCommand> cmd)
@@ -171,6 +148,7 @@ void Server::close_conn()
         LOG(INFO) << "Close " << this->str();
         this->close();
         this->_buffer.clear();
+        this->_output_buffer_set.clear();
 
         for (util::sref<DataCommand> c: this->_commands) {
             this->_proxy->retry_move_ask_command_later(c);
@@ -250,14 +228,14 @@ Server* Server::get_server(util::Address addr, Proxy* p)
     return i->second;
 }
 
-static Buffer const READ_ONLY_CMD(Buffer::from_string("READONLY\r\n"));
+static std::string const READONLY_CMD("READONLY\r\n");
 
 void Server::send_readonly_for_each_conn()
 {
     ::on_server_connected =
         [](int fd, std::vector<util::sref<DataCommand>>& cmds)
         {
-            READ_ONLY_CMD.write(fd);
+            flush_string(fd, READONLY_CMD);
             cmds.push_back(util::sref<DataCommand>(nullptr));
         };
 }
