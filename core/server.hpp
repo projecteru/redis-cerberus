@@ -25,10 +25,9 @@ namespace cerb {
         std::vector<util::sref<DataCommand>> _commands;
         std::vector<util::sref<DataCommand>> _ready_commands;
 
-        void _send_to();
         void _recv_from();
         void _reconnect(util::Address const& addr, Proxy* p);
-        void _send_buffer_set();
+        void _push_to_buffer_set();
 
         Server()
             : ProxyConnection(-1)

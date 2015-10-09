@@ -21,6 +21,7 @@ namespace cerb {
         virtual Buffer const& get_buffer() const = 0;
         virtual bool server_moved() const { return false; }
 
+        static std::string const NIL_STR;
         static Buffer const NIL;
     };
 

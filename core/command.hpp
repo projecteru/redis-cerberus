@@ -16,7 +16,7 @@ namespace cerb {
 
     class Command {
     public:
-        Buffer buffer;
+        std::shared_ptr<Buffer> buffer;
         util::sref<CommandGroup> const group;
 
         virtual ~Command() = default;
@@ -27,12 +27,13 @@ namespace cerb {
         void responsed();
 
         Command(Buffer b, util::sref<CommandGroup> g)
-            : buffer(std::move(b))
+            : buffer(new Buffer(std::move(b)))
             , group(g)
         {}
 
         explicit Command(util::sref<CommandGroup> g)
-            : group(g)
+            : buffer(new Buffer)
+            , group(g)
         {}
 
         Command(Command const&) = delete;

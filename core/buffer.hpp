@@ -11,6 +11,8 @@
 
 namespace cerb {
 
+    void flush_string(int fd, std::string const& s);
+
     class Buffer {
         typedef std::vector<byte, BufferStatAllocator> ContainerType;
         ContainerType _buffer;
@@ -20,9 +22,11 @@ namespace cerb {
         typedef ContainerType::iterator iterator;
         typedef ContainerType::const_iterator const_iterator;
 
-        Buffer() {}
+        Buffer() = default;
 
-        static Buffer from_string(std::string const& s);
+        Buffer(std::string const& s)
+            : _buffer(s.begin(), s.end())
+        {}
 
         Buffer(Buffer const&) = delete;
 
@@ -70,6 +74,16 @@ namespace cerb {
             return _buffer.empty();
         }
 
+        void swap(Buffer& another)
+        {
+            this->_buffer.swap(another._buffer);
+        }
+
+        void swap(Buffer&& another)
+        {
+            this->_buffer.swap(another._buffer);
+        }
+
         void clear()
         {
             _buffer.clear();
@@ -84,14 +98,13 @@ namespace cerb {
         int write(int fd) const;
         void truncate_from_begin(iterator i);
         void buffer_ready(std::vector<cio::iovec>& iov);
-        void copy_from(const_iterator first, const_iterator last);
         void append_from(const_iterator first, const_iterator last);
         std::string to_string() const;
         bool same_as_string(std::string const& s) const;
     };
 
     class BufferSet {
-        std::deque<util::sref<Buffer>> _buf_arr;
+        std::deque<std::shared_ptr<Buffer>> _buf_arr;
         int _1st_buf_offset;
     public:
         BufferSet(BufferSet const&) = delete;
@@ -100,9 +113,14 @@ namespace cerb {
             : _1st_buf_offset(0)
         {}
 
-        void append(util::sref<Buffer> buf)
+        void append(std::shared_ptr<Buffer> buf)
         {
             this->_buf_arr.push_back(buf);
+        }
+
+        void clear()
+        {
+            this->_buf_arr.clear();
         }
 
         bool empty() const

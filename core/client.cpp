@@ -10,6 +10,8 @@
 
 using namespace cerb;
 
+static msize_t const MAX_PIPE = 64;
+
 Client::Client(int fd, Proxy* p)
     : ProxyConnection(fd)
     , _proxy(p)
@@ -42,10 +44,8 @@ void Client::on_events(int events)
             this->_write_response();
         }
     } catch (BadRedisMessage& e) {
-        LOG(DEBUG) << "Receive bad message from " << this->str()
-                   << " because: " << e.what()
-                   << "\nDump buffer (before close): "
-                   << this->_buffer.to_string();
+        LOG(INFO) << fmt::format("Receive bad message from {} because {}", this->str(), e.what());
+        LOG(DEBUG) << "Dump buffer " << this->_buffer.to_string();
         return this->close();
     } catch (IOErrorBase& e) {
         LOG(DEBUG) << "IOError: " << e.what() << " :: Close " << this->str();
@@ -96,7 +96,7 @@ void Client::_write_response()
         return;
     }
 
-    this->_ready_groups = std::move(this->_awaiting_groups);
+    this->_ready_groups.swap(this->_awaiting_groups);
     for (auto const& g: this->_ready_groups) {
         g->append_buffer_to(this->_output_buffer_set);
     }
@@ -131,11 +131,14 @@ void Client::reactivate(util::sref<Command> cmd)
 
 void Client::_process()
 {
-    for (auto& g: this->_parsed_groups) {
+    msize_t pipe_groups = std::min(msize_t(this->_parsed_groups.size()), MAX_PIPE);
+    LOG(DEBUG) << fmt::format("{} Process {} over {} commands", this->str(), pipe_groups, this->_parsed_groups.size());
+    for (msize_t i = 0; i < pipe_groups; ++i) {
+        auto& g = this->_parsed_groups[i];
         if (g->long_connection()) {
             this->_proxy->poll_del(this);
             g->deliver_client(this->_proxy);
-            LOG(DEBUG) << "Convert self to long connection, delete " << this;
+            LOG(DEBUG) << "Convert self to long connection, close " << this->str();
             return this->close();
         }
 
@@ -145,7 +148,12 @@ void Client::_process()
         }
         this->_awaiting_groups.push_back(std::move(g));
     }
-    this->_parsed_groups.clear();
+    if (pipe_groups == this->_parsed_groups.size()) {
+        this->_parsed_groups.clear();
+    } else {
+        this->_parsed_groups.erase(this->_parsed_groups.begin(),
+                                   this->_parsed_groups.begin() + pipe_groups);
+    }
 
     if (0 < this->_awaiting_count) {
         for (Server* svr: this->_peers) {

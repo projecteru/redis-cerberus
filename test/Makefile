@@ -13,7 +13,7 @@ endif
 MOCK_OBJS=$(TESTDIR)/mock-stats.o $(TESTDIR)/mock-io.o $(TESTDIR)/mock-poll.o \
           $(TESTDIR)/mock-acceptor.o
 
-test:core-objs util-test buffer-test slot-map-test server-client-test \
+test:core-objs buffer-test util-test slot-map-test server-client-test \
      event-loop-test script-test
 	@echo "======================"
 	@echo "| Test done _(:3J<)_ |"
@@ -24,6 +24,13 @@ core-objs:
 	@make -f core/Makefile OBJDIR=$(OBJDIR) MODE=$(MODE) \
 	    COMPILER=$(COMPILER) CANDIDATE_IO=1 CANDIDATE_POLL=1 CANDIDATE_FCTL=1
 
+buffer-test:buffer.dt mock-suit mock-server.dt mock-proxy.dt
+	$(LINK) $(TESTDIR)/buffer.o $(OBJDIR)/buffer.o $(OBJDIR)/connection.o \
+	        $(OBJDIR)/fdutil.o $(OBJDIR)/slot_map.o $(TESTDIR)/mock-proxy.o \
+	        utils/*.o $(TESTDIR)/mock-server.o $(MOCK_OBJS) $(TEST_LIBS) \
+	    -o $(TESTDIR)/test-buffer.out
+	$(VALGRIND) $(TESTDIR)/test-buffer.out
+
 util-test:message.dt response.dt buffer.dt slot_calc.dt mock-io.dt mock-suit \
           mock-server.dt mock-proxy.dt alg.dt
 	$(LINK) $(TESTDIR)/message.o $(TESTDIR)/response.o $(TESTDIR)/slot_calc.o \
@@ -33,13 +40,6 @@ util-test:message.dt response.dt buffer.dt slot_calc.dt mock-io.dt mock-suit \
 	        $(TESTDIR)/mock-server.o $(TESTDIR)/alg.o $(TEST_LIBS) \
 	     -o $(TESTDIR)/test-utils.out
 	$(VALGRIND) $(TESTDIR)/test-utils.out
-
-buffer-test:buffer.dt mock-suit mock-server.dt mock-proxy.dt
-	$(LINK) $(TESTDIR)/buffer.o $(OBJDIR)/buffer.o $(OBJDIR)/connection.o \
-	        $(OBJDIR)/fdutil.o $(OBJDIR)/slot_map.o $(TESTDIR)/mock-proxy.o \
-	        utils/*.o $(TESTDIR)/mock-server.o $(MOCK_OBJS) $(TEST_LIBS) \
-	     -o $(TESTDIR)/test-buffer.out
-	$(VALGRIND) $(TESTDIR)/test-buffer.out
 
 slot-map-test:slot_map.dt mock-server.dt mock-proxy.dt mock-suit
 	$(LINK) $(TESTDIR)/mock-server.o $(TESTDIR)/slot_map.o $(OBJDIR)/buffer.o \

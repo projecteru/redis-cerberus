@@ -423,14 +423,46 @@ TEST_F(EventLoopProxyDateTest, ClientsGather)
     EventLoopTest::run_all_polls();
     ASSERT_EQ(0, EventLoopTest::write_buffer_size(client_a));
     ASSERT_EQ(0, EventLoopTest::write_buffer_size(client_b));
-    ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ(2, EventLoopTest::write_buffer_size(server->fd));
     ASSERT_EQ(format_command("GET", {"developer"}), EventLoopTest::get_written_of(server->fd, 0));
+    ASSERT_EQ(format_command("GET", {"goblin"}), EventLoopTest::get_written_of(server->fd, 1));
     EventLoopTest::clear_buffer_of(server->fd);
 
     EventLoopTest::push_read_of(server->fd, "$4\r\nMoss\r\n");
     EventLoopTest::run_all_polls();
     ASSERT_EQ(1, EventLoopTest::write_buffer_size(client_a));
     ASSERT_EQ("$4\r\nMoss\r\n", EventLoopTest::get_written_of(client_a, 0));
+    ASSERT_EQ(0, EventLoopTest::write_buffer_size(server->fd));
+}
+
+TEST_F(EventLoopProxyDateTest, ClientExitWhenBufferPartiallyWritten)
+{
+    std::vector<RedisNode> nodes;
+    RedisNode x(util::Address("10.0.0.1", 9000), "392912473d8dc82a9099fac91ce334be742fa301");
+    x.slot_ranges.insert(std::make_pair(0, 16383));
+    nodes.push_back(std::move(x));
+    EventLoopTest::update_slots_map(std::move(nodes));
+
+    Server* server = EventLoopTest::proxy->get_server_by_slot(0);
+    ASSERT_NE(nullptr, server);
+    int client = EventLoopTest::connect_client();
+
+    EventLoopTest::push_read_of(client, format_command("GET", {"nevermore"}));
+    EventLoopTest::io_obj->push_writing_size(server->fd, 8);
+    EventLoopTest::io_obj->push_writing_size(server->fd, 1000);
+    EventLoopTest::run_poll();
+    EventLoopTest::run_poll();
+
     ASSERT_EQ(1, EventLoopTest::write_buffer_size(server->fd));
-    ASSERT_EQ(format_command("GET", {"goblin"}), EventLoopTest::get_written_of(server->fd, 0));
+    ASSERT_EQ("*2\r\n$3\r\n", EventLoopTest::get_written_of(server->fd, 0));
+
+    EventLoopTest::reset_conn(client);
+    EventLoopTest::run_all_polls();
+
+    ASSERT_EQ(2, EventLoopTest::write_buffer_size(server->fd));
+    ASSERT_EQ("*2\r\n$3\r\n", EventLoopTest::get_written_of(server->fd, 0));
+    ASSERT_EQ("GET\r\n$9\r\nnevermore\r\n", EventLoopTest::get_written_of(server->fd, 1));
+
+    EventLoopTest::push_read_of(server->fd, "$7\r\nnothing\r\n");
+    EventLoopTest::run_all_polls();
 }

@@ -23,13 +23,22 @@ static void on_error(std::string const& message)
     throw SystemError(message, errno);
 }
 
-Buffer Buffer::from_string(std::string const& s)
+static void flush_mem(int fd, byte const* mem, msize_t sz)
 {
-    Buffer b;
-    for (char ch: s) {
-        b._buffer.push_back(byte(ch));
+    msize_t n = 0;
+    while (n < sz) {
+        ssize_t nwrite = cio::write(fd, mem + n, sz - n);
+        if (nwrite == -1) {
+            on_error("buffer write");
+            continue;
+        }
+        n += nwrite;
     }
-    return std::move(b);
+}
+
+void cerb::flush_string(int fd, std::string const& s)
+{
+    ::flush_mem(fd, reinterpret_cast<byte const*>(s.data()), s.size());
 }
 
 int Buffer::read(int fd)
@@ -48,16 +57,8 @@ int Buffer::read(int fd)
 
 int Buffer::write(int fd) const
 {
-    size_type n = 0;
-    while (n < _buffer.size()) {
-        int nwrite = cio::write(fd, _buffer.data() + n, _buffer.size() - n);
-        if (nwrite == -1) {
-            on_error("buffer write");
-            continue;
-        }
-        n += nwrite;
-    }
-    return n;
+    ::flush_mem(fd, this->_buffer.data(), this->_buffer.size());
+    return this->_buffer.size();
 }
 
 void Buffer::truncate_from_begin(iterator i)
@@ -72,12 +73,6 @@ void Buffer::buffer_ready(std::vector<cio::iovec>& iov)
         LOG(DEBUG) << "Push iov " << reinterpret_cast<void*>(_buffer.data()) << ' ' << _buffer.size();
         iov.push_back(v);
     }
-}
-
-void Buffer::copy_from(const_iterator first, const_iterator last)
-{
-    _buffer.clear();
-    append_from(first, last);
 }
 
 void Buffer::append_from(const_iterator first, const_iterator last)
@@ -151,12 +146,12 @@ static int write_vec(int fd, int iovcnt, cio::iovec* iov, ssize_t total, int* fi
 }
 
 static std::pair<int, int> next_group_to_write(
-        std::deque<util::sref<Buffer>> const& buf_arr, int first_offset, cio::iovec* vec)
+        std::deque<std::shared_ptr<Buffer>> const& buf_arr, int first_offset, cio::iovec* vec)
 {
     vec[0].iov_base = buf_arr[0]->data();
     vec[0].iov_len = buf_arr[0]->size();
     Buffer::size_type bulk_write_size = buf_arr[0]->size() - first_offset;
-    std::deque<util::sref<Buffer>>::size_type i = 1;
+    std::deque<std::shared_ptr<Buffer>>::size_type i = 1;
     for (; i < buf_arr.size()
             && i < IOV_MAX
             && bulk_write_size + buf_arr[i]->size() <= WRITEV_MAX_SIZE;

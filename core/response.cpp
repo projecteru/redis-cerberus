@@ -8,7 +8,8 @@
 
 using namespace cerb;
 
-Buffer const Response::NIL(Buffer::from_string("$-1\r\n"));
+std::string const Response::NIL_STR("$-1\r\n");
+Buffer const Response::NIL(NIL_STR);
 
 namespace {
 
@@ -55,8 +56,7 @@ namespace {
             return true;
         }
     };
-    Buffer const RetryMovedAskResponse::dump(
-        Buffer::from_string("$ RETRY MOVED OR ASK $"));
+    Buffer const RetryMovedAskResponse::dump("$ RETRY MOVED OR ASK $");
 
     class ServerResponseSplitter
         : public cerb::msg::MessageSplitterBase<
