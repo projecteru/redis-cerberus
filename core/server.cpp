@@ -33,8 +33,10 @@ void Server::on_events(int events)
             exit(1);
         }
     }
-
     this->_push_to_buffer_set();
+    if (poll::event_is_write(events)) {
+        this->_output_buffer_set.writev(this->fd);
+    }
     if (this->_output_buffer_set.empty()) {
         this->_proxy->set_conn_poll_ro(this);
     } else {
@@ -46,11 +48,10 @@ void Server::_push_to_buffer_set()
 {
     auto now = Clock::now();
     for (util::sref<DataCommand> c: this->_commands) {
-        this->_ready_commands.push_back(c);
+        this->_sent_commands.push_back(c);
         this->_output_buffer_set.append(c->buffer);
         c->sent_time = now;
     }
-    this->_output_buffer_set.writev(this->fd);
     this->_commands.clear();
 }
 
@@ -62,8 +63,8 @@ void Server::_recv_from()
     }
     LOG(DEBUG) << "Read " << this->str() << " buffer size " << this->_buffer.size();
     auto responses(split_server_response(this->_buffer));
-    if (responses.size() > this->_ready_commands.size()) {
-        LOG(ERROR) << "+Error on split, expected size: " << this->_ready_commands.size()
+    if (responses.size() > this->_sent_commands.size()) {
+        LOG(ERROR) << "+Error on split, expected size: " << this->_sent_commands.size()
                    << " actual: " << responses.size() << " dump buffer:";
         for (util::sptr<Response> const& rsp: responses) {
             LOG(ERROR) << "::: " << rsp->get_buffer().to_string();
@@ -74,7 +75,7 @@ void Server::_recv_from()
     }
     LOG(DEBUG) << "+responses size: " << responses.size();
     LOG(DEBUG) << "+rest buffer: " << this->_buffer.size();
-    auto cmd_it = this->_ready_commands.begin();
+    auto cmd_it = this->_sent_commands.begin();
     auto now = Clock::now();
     for (util::sptr<Response>& rsp: responses) {
         util::sref<DataCommand> c = *cmd_it++;
@@ -83,7 +84,7 @@ void Server::_recv_from()
             c->resp_time = now;
         }
     }
-    this->_ready_commands.erase(this->_ready_commands.begin(), cmd_it);
+    this->_sent_commands.erase(this->_sent_commands.begin(), cmd_it);
 }
 
 void Server::push_client_command(util::sref<DataCommand> cmd)
@@ -100,7 +101,7 @@ void Server::pop_client(Client* cli)
         {
             return cmd->group->client.is(cli);
         });
-    for (util::sref<DataCommand>& cmd: this->_ready_commands) {
+    for (util::sref<DataCommand>& cmd: this->_sent_commands) {
         if (cmd.not_nul() && cmd->group->client.is(cli)) {
             cmd.reset();
         }
@@ -110,13 +111,13 @@ void Server::pop_client(Client* cli)
 std::vector<util::sref<DataCommand>> Server::deliver_commands()
 {
     util::erase_if(
-        this->_ready_commands,
+        this->_sent_commands,
         [](util::sref<DataCommand> cmd)
         {
             return cmd.nul();
         });
-    _commands.insert(_commands.end(), _ready_commands.begin(),
-                     _ready_commands.end());
+    _commands.insert(_commands.end(), _sent_commands.begin(),
+                     _sent_commands.end());
     return std::move(_commands);
 }
 
@@ -155,13 +156,13 @@ void Server::close_conn()
         }
         this->_commands.clear();
 
-        for (util::sref<DataCommand> c: this->_ready_commands) {
+        for (util::sref<DataCommand> c: this->_sent_commands) {
             if (c.nul()) {
                 continue;
             }
             this->_proxy->retry_move_ask_command_later(c);
         }
-        this->_ready_commands.clear();
+        this->_sent_commands.clear();
 
         for (ProxyConnection* conn: this->attached_long_connections) {
             this->_proxy->inactivate_long_conn(conn);
@@ -195,7 +196,7 @@ void Server::_reconnect(util::Address const& addr, Proxy* p)
     fctl::connect_fd(addr.host, addr.port, this->fd);
     LOG(INFO) << "Open " << this->str();
     p->poll_add_rw(this);
-    ::on_server_connected(this->fd, this->_ready_commands);
+    ::on_server_connected(this->fd, this->_sent_commands);
 }
 
 Server* Server::_alloc_server(util::Address const& addr, Proxy* p)
