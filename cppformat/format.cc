@@ -205,8 +205,8 @@ int safe_strerror(
     }
 
    public:
-    StrError(int error_code, char *&buffer, std::size_t buffer_size)
-      : error_code_(error_code), buffer_(buffer), buffer_size_(buffer_size) {}
+    StrError(int err_code, char *&buf, std::size_t buf_size)
+      : error_code_(err_code), buffer_(buf), buffer_size_(buf_size) {}
 
     int run() {
       strerror_r(0, 0, "");  // Suppress a warning about unused strerror_r.
@@ -503,25 +503,32 @@ class PrintfArgFormatter :
   : BasicArgFormatter<PrintfArgFormatter<Char>, Char>(w, s) {}
 
   void visit_char(int value) {
-    const FormatSpec &spec = this->spec();
-    BasicWriter<Char> &writer = this->writer();
-    if (spec.type_ && spec.type_ != 'c')
-      writer.write_int(value, spec);
+    const FormatSpec &fmt_spec = this->spec();
+    BasicWriter<Char> &w = this->writer();
+    if (fmt_spec.type_ && fmt_spec.type_ != 'c')
+      w.write_int(value, fmt_spec);
     typedef typename BasicWriter<Char>::CharPtr CharPtr;
     CharPtr out = CharPtr();
-    if (spec.width_ > 1) {
+    if (fmt_spec.width_ > 1) {
       Char fill = ' ';
-      out = writer.grow_buffer(spec.width_);
-      if (spec.align_ != ALIGN_LEFT) {
-        std::fill_n(out, spec.width_ - 1, fill);
-        out += spec.width_ - 1;
+      out = w.grow_buffer(fmt_spec.width_);
+      if (fmt_spec.align_ != ALIGN_LEFT) {
+        std::fill_n(out, fmt_spec.width_ - 1, fill);
+        out += fmt_spec.width_ - 1;
       } else {
-        std::fill_n(out + 1, spec.width_ - 1, fill);
+        std::fill_n(out + 1, fmt_spec.width_ - 1, fill);
       }
     } else {
-      out = writer.grow_buffer(1);
+      out = w.grow_buffer(1);
     }
     *out = static_cast<Char>(value);
+  }
+
+  void visit_custom(Arg::CustomValue c) {
+    BasicFormatter<Char> formatter(ArgList(), this->writer());
+    const Char format_str[] = {'}', 0};
+    const Char *format = format_str;
+    c.format(&formatter, c.value, &format);
   }
 };
 }  // namespace internal
@@ -612,14 +619,17 @@ FMT_FUNC void fmt::internal::report_unknown_type(char code, const char *type) {
 #if FMT_USE_WINDOWS_H
 
 FMT_FUNC fmt::internal::UTF8ToUTF16::UTF8ToUTF16(fmt::StringRef s) {
-  int length = MultiByteToWideChar(
-      CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), s.size(), 0, 0);
   static const char ERROR_MSG[] = "cannot convert string from UTF-8 to UTF-16";
+  if (s.size() > INT_MAX)
+    FMT_THROW(WindowsError(ERROR_INVALID_PARAMETER, ERROR_MSG));
+  int s_size = static_cast<int>(s.size());
+  int length = MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), s_size, 0, 0);
   if (length == 0)
     FMT_THROW(WindowsError(GetLastError(), ERROR_MSG));
   buffer_.resize(length + 1);
   length = MultiByteToWideChar(
-    CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), s.size(), &buffer_[0], length);
+    CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), s_size, &buffer_[0], length);
   if (length == 0)
     FMT_THROW(WindowsError(GetLastError(), ERROR_MSG));
   buffer_[length] = 0;
@@ -633,12 +643,15 @@ FMT_FUNC fmt::internal::UTF16ToUTF8::UTF16ToUTF8(fmt::WStringRef s) {
 }
 
 FMT_FUNC int fmt::internal::UTF16ToUTF8::convert(fmt::WStringRef s) {
-  int length = WideCharToMultiByte(CP_UTF8, 0, s.data(), s.size(), 0, 0, 0, 0);
+  if (s.size() > INT_MAX)
+    return ERROR_INVALID_PARAMETER;
+  int s_size = static_cast<int>(s.size());
+  int length = WideCharToMultiByte(CP_UTF8, 0, s.data(), s_size, 0, 0, 0, 0);
   if (length == 0)
     return GetLastError();
   buffer_.resize(length + 1);
   length = WideCharToMultiByte(
-    CP_UTF8, 0, s.data(), s.size(), &buffer_[0], length, 0, 0);
+    CP_UTF8, 0, s.data(), s_size, &buffer_[0], length, 0, 0);
   if (length == 0)
     return GetLastError();
   buffer_[length] = 0;
@@ -769,7 +782,7 @@ void fmt::BasicWriter<Char>::write_str(
   if (str_size == 0) {
     if (!str_value)
       FMT_THROW(FormatError("string pointer is null"));
-    if (*str_value)
+    else if (*str_value)
       str_size = std::char_traits<StrChar>::length(str_value);
   }
   std::size_t precision = spec.precision_;
