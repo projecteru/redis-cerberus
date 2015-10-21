@@ -11,6 +11,7 @@
 using namespace cerb;
 
 static msize_t const MAX_PIPE = 64;
+static msize_t const MAX_RESPONSES = 256;
 
 Client::Client(int fd, Proxy* p)
     : ProxyConnection(fd)
@@ -86,7 +87,11 @@ void Client::_send_buffer_set()
 
 void Client::_push_awaitings_to_ready()
 {
-    if (this->_awaiting_count != 0) {
+    if (this->_awaiting_count != 0 || (
+            !this->_ready_groups.empty() &&
+            this->_awaiting_groups.size() + this->_ready_groups.empty() > MAX_RESPONSES
+        ))
+    {
         return;
     }
     for (util::sptr<CommandGroup>& g: this->_awaiting_groups) {
