@@ -1,6 +1,6 @@
 #include "logging.hpp"
 
-_INITIALIZE_EASYLOGGINGPP
+INITIALIZE_EASYLOGGINGPP
 
 void logging::init()
 {
