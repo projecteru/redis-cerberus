@@ -11,6 +11,7 @@
 using namespace cerb;
 
 static msize_t const MAX_PIPE = 64;
+static msize_t const MAX_RESPONSES = 256;
 
 Client::Client(int fd, Proxy* p)
     : ProxyConnection(fd)
@@ -43,6 +44,11 @@ void Client::on_events(int events)
         if (poll::event_is_write(events)) {
             this->_write_response();
         }
+        if (this->_output_buffer_set.empty()) {
+            this->_proxy->set_conn_poll_ro(this);
+        } else {
+            this->_proxy->set_conn_poll_rw(this);
+        }
     } catch (BadRedisMessage& e) {
         LOG(INFO) << fmt::format("Receive bad message from {} because {}", this->str(), e.what());
         LOG(DEBUG) << "Dump buffer " << this->_buffer.to_string();
@@ -73,14 +79,29 @@ void Client::_send_buffer_set()
         }
         this->_ready_groups.clear();
         this->_peers.clear();
-        if (this->_parsed_groups.empty()) {
-            this->_proxy->set_conn_poll_ro(this);
-        } else {
+        if (!this->_parsed_groups.empty()) {
             _process();
         }
+    }
+}
+
+void Client::_push_awaitings_to_ready()
+{
+    if (this->_awaiting_count != 0 || (
+            !this->_ready_groups.empty() &&
+            this->_awaiting_groups.size() + this->_ready_groups.empty() > MAX_RESPONSES
+        ))
+    {
         return;
     }
-    this->_proxy->set_conn_poll_rw(this);
+    for (util::sptr<CommandGroup>& g: this->_awaiting_groups) {
+        g->append_buffer_to(this->_output_buffer_set);
+        this->_ready_groups.push_back(std::move(g));
+    }
+    this->_awaiting_groups.clear();
+    if (!this->_output_buffer_set.empty()) {
+        this->_proxy->set_conn_poll_rw(this);
+    }
 }
 
 void Client::_write_response()
@@ -91,15 +112,7 @@ void Client::_write_response()
     if (this->_awaiting_groups.empty() || _awaiting_count != 0) {
         return;
     }
-    if (!this->_ready_groups.empty()) {
-        LOG(DEBUG) << "-busy";
-        return;
-    }
-
-    this->_ready_groups.swap(this->_awaiting_groups);
-    for (auto const& g: this->_ready_groups) {
-        g->append_buffer_to(this->_output_buffer_set);
-    }
+    this->_push_awaitings_to_ready();
     this->_send_buffer_set();
 }
 
@@ -112,10 +125,8 @@ void Client::_read_request()
         return this->close();
     }
     ::split_client_command(this->_buffer, util::mkref(*this));
-    if (this->_awaiting_groups.empty() && this->_ready_groups.empty()) {
+    if (this->_awaiting_groups.empty()) {
         this->_process();
-    } else {
-        this->_proxy->set_conn_poll_ro(this);
     }
 }
 
@@ -159,29 +170,16 @@ void Client::_process()
         for (Server* svr: this->_peers) {
             this->_proxy->set_conn_poll_rw(svr);
         }
-        this->_proxy->set_conn_poll_ro(this);
     } else {
-        this->_response_ready();
+        this->_push_awaitings_to_ready();
     }
     LOG(DEBUG) << "Processed, rest buffer " << this->_buffer.size();
 }
 
-void Client::_response_ready()
-{
-    if (this->closed()) {
-        return;
-    }
-    if (this->_awaiting_groups.empty() && this->_ready_groups.empty()) {
-        return this->_proxy->set_conn_poll_ro(this);
-    }
-    this->_proxy->set_conn_poll_rw(this);
-}
-
 void Client::group_responsed()
 {
-    if (--_awaiting_count == 0) {
-        _response_ready();
-    }
+    --this->_awaiting_count;
+    this->_push_awaitings_to_ready();
 }
 
 void Client::add_peer(Server* svr)

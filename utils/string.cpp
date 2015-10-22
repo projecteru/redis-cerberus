@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "string.h"
+#include "except/exceptions.hpp"
 
 using namespace util;
 
@@ -30,7 +31,7 @@ int util::atoi(std::string const& a)
     int r;
     ss >> std::ws >> r >> std::ws;
     if (!ss.eof()) {
-        throw std::runtime_error("Invalid integer literal: " + a);
+        throw cerb::BadRedisMessage("Invalid integer literal: " + a);
     }
     return r;
 }

@@ -23,7 +23,7 @@ namespace cerb {
         BufferSet _output_buffer_set;
 
         std::vector<util::sref<DataCommand>> _commands;
-        std::vector<util::sref<DataCommand>> _ready_commands;
+        std::vector<util::sref<DataCommand>> _sent_commands;
 
         void _recv_from();
         void _reconnect(util::Address const& addr, Proxy* p);

@@ -28,7 +28,7 @@ namespace cerb {
 
         void _process();
         void _send_buffer_set();
-        void _response_ready();
+        void _push_awaitings_to_ready();
     public:
         Client(int fd, Proxy* p);
         ~Client();

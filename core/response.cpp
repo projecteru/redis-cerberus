@@ -62,29 +62,23 @@ namespace {
         : public cerb::msg::MessageSplitterBase<
             Buffer::iterator, ServerResponseSplitter>
     {
-        typedef cerb::msg::MessageSplitterBase<
-            Buffer::iterator, ServerResponseSplitter> BaseType;
+        typedef Buffer::iterator Iterator;
+        typedef cerb::msg::MessageSplitterBase<Iterator, ServerResponseSplitter> BaseType;
 
         std::string _last_error;
 
-        void _base_on_element(Buffer::iterator i)
-        {
-            BaseType::on_element(i);
-        }
-
         void _push_retry_rsp()
         {
-            responses.push_back(util::mkptr(new RetryMovedAskResponse));
+            this->responses.push_back(util::mkptr(new RetryMovedAskResponse));
         }
 
-        void _push_normal_rsp(Buffer::iterator begin, Buffer::iterator end,
-                              bool error)
+        void _push_normal_rsp(Iterator begin, Iterator end)
         {
-            responses.push_back(util::mkptr(
-                new NormalResponse(Buffer(begin, end), error)));
+            this->responses.push_back(util::mkptr(
+                new NormalResponse(Buffer(begin, end), !this->_last_error.empty())));
         }
 
-        void _push_rsp(Buffer::iterator i)
+        void _push_rsp(Iterator i)
         {
             if (!_last_error.empty()) {
                 if (util::stristartswith(_last_error, "MOVED") ||
@@ -92,66 +86,27 @@ namespace {
                     util::stristartswith(_last_error, "CLUSTERDOWN"))
                 {
                     LOG(DEBUG) << "Retry due to " << _last_error;
-                    return _push_retry_rsp();
+                    return this->_push_retry_rsp();
                 }
             }
-            _push_normal_rsp(_split_points.back(), i, !_last_error.empty());
+            this->_push_normal_rsp(this->_split_points.back(), i);
         }
-
-        static void _default_on_element(ServerResponseSplitter* me, Buffer::iterator i)
-        {
-            me->_push_rsp(i);
-            me->_last_error.clear();
-            me->_base_on_element(i);
-        }
-
-        std::function<void(ServerResponseSplitter*, Buffer::iterator)> _on_element;
     public:
         std::vector<util::sptr<Response>> responses;
 
-        void on_byte(byte) {}
-
-        void on_element(Buffer::iterator i)
-        {
-            this->_on_element(this, i);
-        }
-
-        explicit ServerResponseSplitter(Buffer::iterator i)
+        explicit ServerResponseSplitter(Iterator i)
             : BaseType(i)
-            , _on_element(_default_on_element)
         {}
 
-        Buffer::iterator on_err(Buffer::iterator begin, Buffer::iterator end)
+        void on_split_point(Iterator next)
         {
-            auto next = msg::parse_simple_str(
-                begin, end,
-                [this](byte b)
-                {
-                    this->_last_error += b;
-                });
-            this->on_element(next);
-            return next;
+            this->_push_rsp(next);
+            this->_last_error.clear();
         }
 
-        void on_arr_end(Buffer::iterator next)
+        void on_error(Iterator begin, Iterator end)
         {
-            _push_normal_rsp(_split_points.back(), next, false);
-            BaseType::on_element(next);
-            if (this->_nested_array_element_count.size() == 0) {
-                this->_on_element = _default_on_element;
-            }
-        }
-
-        void on_arr(cerb::rint size, Buffer::iterator next)
-        {
-            if (size != 0) {
-                this->_on_element =
-                    [](ServerResponseSplitter* me, Buffer::iterator i)
-                    {
-                        me->_base_on_element(i);
-                    };
-            }
-            BaseType::on_arr(size, next);
+            this->_last_error = std::string(begin, end);
         }
     };
 

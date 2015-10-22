@@ -310,31 +310,9 @@ namespace {
         }
     }
 
-    std::map<std::string, std::function<std::string()>> const QUICK_RSP({
-        {"PING", []() {return "+PONG\r\n";}},
-        {"PROXY", []() {return stats_string();}},
-        {"INFO", []() {return stats_string();}},
-        {"UPDATESLOTMAP",
-            []()
-            {
-                ::notify_each_thread_update_slot_map();
-                return RSP_OK_STR;
-            }},
-    });
-
-    util::sptr<CommandGroup> quick_rsp(std::string const& command, util::sref<Client> c)
-    {
-        auto fi = QUICK_RSP.find(command);
-        return util::mkptr(new DirectCommandGroup(
-            c, fi == QUICK_RSP.end()
-                ? "-ERR unknown command '" + command + "'\r\n"
-                : fi->second()));
-    }
-
     class SpecialCommandParser {
     public:
-        virtual void on_byte(byte b) = 0;
-        virtual void on_element(Buffer::iterator i) = 0;
+        virtual void on_str(Buffer::iterator begin, Buffer::iterator end) = 0;
         virtual ~SpecialCommandParser() {}
 
         virtual util::sptr<CommandGroup> spawn_commands(
@@ -347,37 +325,22 @@ namespace {
     class PingCommandParser
         : public SpecialCommandParser
     {
-        Buffer::iterator begin;
-        Buffer::iterator end;
-        bool bad;
+        std::string msg;
     public:
-        explicit PingCommandParser(Buffer::iterator arg_begin)
-            : begin(arg_begin)
-            , end(arg_begin)
-            , bad(false)
-        {}
+        PingCommandParser() = default;
 
-        util::sptr<CommandGroup> spawn_commands(
-            util::sref<Client> c, Buffer::iterator end)
+        util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
         {
-            if (bad) {
-                return util::mkptr(new DirectCommandGroup(
-                    c, "-ERR wrong number of arguments for 'PING' command\r\n"));
-            }
-            if (this->begin == end) {
+            if (this->msg.empty()) {
                 return util::mkptr(new DirectCommandGroup(c, "+PONG\r\n"));
             }
-            return util::mkptr(new DirectCommandGroup(c, Buffer(begin, end)));
+            return util::mkptr(new DirectCommandGroup(c, fmt::format(
+                            "${}\r\n{}\r\n", this->msg.size(), this->msg)));
         }
 
-        void on_byte(byte) {}
-
-        void on_element(Buffer::iterator i)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            if (begin != end) {
-                bad = true;
-            }
-            end = i;
+            this->msg = std::string(begin, end);
         }
     };
 
@@ -393,8 +356,7 @@ namespace {
             return util::mkptr(new DirectCommandGroup(c, stats_string()));
         }
 
-        void on_byte(byte) {}
-        void on_element(Buffer::iterator) {}
+        void on_str(Buffer::iterator, Buffer::iterator) {}
     };
 
     class UpdateSlotMapCommandParser
@@ -409,8 +371,7 @@ namespace {
             return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
         }
 
-        void on_byte(byte) {}
-        void on_element(Buffer::iterator) {}
+        void on_str(Buffer::iterator, Buffer::iterator) {}
     };
 
     class SetRemotesCommandParser
@@ -418,13 +379,11 @@ namespace {
     {
         std::set<util::Address> remotes;
         std::string last_host;
-        int last_port;
         bool current_is_host;
         bool bad;
     public:
         SetRemotesCommandParser()
-            : last_port(0)
-            , current_is_host(true)
+            : current_is_host(true)
             , bad(false)
         {}
 
@@ -443,27 +402,16 @@ namespace {
             return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
         }
 
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
             if (this->bad) {
                 return;
             }
-            if (this->current_is_host) {
-                this->last_host.push_back(b);
+            if (current_is_host) {
+                this->last_host = std::string(begin, end);
             } else {
-                if (b < '0' || '9' < b) {
-                    bad = true;
-                    return;
-                }
-                this->last_port = this->last_port * 10 + b - '0';
-            }
-        }
-
-        void on_element(Buffer::iterator)
-        {
-            if (!this->current_is_host) {
-                this->remotes.insert(util::Address(std::move(this->last_host), this->last_port));
-                this->last_port = 0;
+                this->remotes.insert(util::Address(std::move(this->last_host),
+                                                   util::atoi(std::string(begin, end))));
             }
             this->current_is_host = !this->current_is_host;
         }
@@ -472,7 +420,6 @@ namespace {
     class EachKeyCommandParser
         : public SpecialCommandParser
     {
-        KeySlotCalc slot_calc;
         std::string const command_name;
         std::vector<Buffer::iterator> keys_split_points;
         std::vector<slot> keys_slots;
@@ -485,16 +432,14 @@ namespace {
             keys_split_points.push_back(arg_begin);
         }
 
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            slot_calc.next_byte(b);
-        }
-
-        void on_element(Buffer::iterator i)
-        {
-            keys_slots.push_back(slot_calc.get_slot());
-            slot_calc.reset();
-            keys_split_points.push_back(i);
+            KeySlotCalc slot_calc;
+            for (; begin != end; ++begin) {
+                slot_calc.next_byte(*begin);
+            }
+            this->keys_slots.push_back(slot_calc.get_slot());
+            this->keys_split_points.push_back(end + msg::LENGTH_OF_CR_LF);
         }
 
         util::sptr<CommandGroup> spawn_commands(
@@ -502,14 +447,14 @@ namespace {
         {
             if (keys_slots.empty()) {
                 return util::mkptr(new DirectCommandGroup(
-                    c, "-ERR wrong number of arguments for '" + command_name + "' command\r\n"));
+                    c, "-ERR wrong number of arguments for '" + this->command_name + "' command\r\n"));
             }
             util::sptr<MultipleCommandsGroup> g(new MultipleCommandsGroup(c));
             for (unsigned i = 0; i < keys_slots.size(); ++i) {
                 Buffer b(command_header());
-                b.append_from(keys_split_points[i], keys_split_points[i + 1]);
+                b.append_from(this->keys_split_points[i], this->keys_split_points[i + 1]);
                 g->append_command(util::mkptr(
-                    new OneSlotCommand(std::move(b), *g, keys_slots[i])));
+                    new OneSlotCommand(std::move(b), *g, this->keys_slots[i])));
             }
             return std::move(g);
         }
@@ -565,7 +510,6 @@ namespace {
 
         std::vector<Buffer::iterator> kv_split_points;
         std::vector<slot> keys_slots;
-        KeySlotCalc slot_calc;
         bool current_is_key;
     public:
         explicit MSetCommandParser(Buffer::iterator arg_begin)
@@ -574,21 +518,17 @@ namespace {
             kv_split_points.push_back(arg_begin);
         }
 
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            if (current_is_key) {
-                slot_calc.next_byte(b);
+            if (this->current_is_key) {
+                KeySlotCalc slot_calc;
+                for (; begin != end; ++begin) {
+                    slot_calc.next_byte(*begin);
+                }
+                this->keys_slots.push_back(slot_calc.get_slot());
             }
-        }
-
-        void on_element(Buffer::iterator i)
-        {
-            if (current_is_key) {
-                keys_slots.push_back(slot_calc.get_slot());
-                slot_calc.reset();
-            }
-            current_is_key = !current_is_key;
-            kv_split_points.push_back(i);
+            this->current_is_key = !this->current_is_key;
+            this->kv_split_points.push_back(end + msg::LENGTH_OF_CR_LF);
         }
 
         util::sptr<CommandGroup> spawn_commands(
@@ -679,7 +619,7 @@ namespace {
 
         Buffer::iterator command_begin;
         std::vector<Buffer::iterator> split_points;
-        KeySlotCalc key_slot[3];
+        KeySlotCalc key_slot[2];
         int slot_index;
         bool bad;
     public:
@@ -692,18 +632,17 @@ namespace {
             split_points.push_back(arg_begin);
         }
 
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            this->key_slot[slot_index].next_byte(b);
-        }
-
-        void on_element(Buffer::iterator i)
-        {
-            this->split_points.push_back(i);
-            if (++slot_index == 3) {
+            if (this->slot_index == 2) {
                 this->bad = true;
-                this->slot_index = 2;
+                return;
             }
+            for (; begin != end; ++begin) {
+                this->key_slot[this->slot_index].next_byte(*begin);
+            }
+            this->split_points.push_back(end + msg::LENGTH_OF_CR_LF);
+            ++this->slot_index;
         }
 
         util::sptr<CommandGroup> spawn_commands(
@@ -757,8 +696,7 @@ namespace {
         Buffer::iterator begin;
         bool no_arg;
     public:
-        void on_byte(byte) {}
-        void on_element(Buffer::iterator)
+        void on_str(Buffer::iterator, Buffer::iterator)
         {
             this->no_arg = false;
         }
@@ -806,36 +744,31 @@ namespace {
             }
         };
 
-        Buffer::iterator begin;
+        Buffer::iterator cmd_begin;
         KeySlotCalc slot_calc;
-        std::function<void(byte)> key_calc;
         int args_count;
     public:
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            this->key_calc(b);
-        }
-
-        void on_element(Buffer::iterator)
-        {
-            this->key_calc = [](byte) {};
+            for (; begin != end; ++begin) {
+                this->slot_calc.next_byte(*begin);
+            }
             ++this->args_count;
         }
 
         explicit BlockedListPopParser(Buffer::iterator begin)
-            : begin(begin)
-            , key_calc([this](byte b) {this->slot_calc.next_byte(b);})
+            : cmd_begin(begin)
             , args_count(0)
         {}
 
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (args_count != 2) {
+            if (this->args_count != 2) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR BLPOP/BRPOP takes exactly 2 arguments KEY TIMEOUT in proxy\r\n"));
             }
-            return util::mkptr(new BlockedPop(c, Buffer(this->begin, end),
+            return util::mkptr(new BlockedPop(c, Buffer(this->cmd_begin, end),
                                               this->slot_calc.get_slot()));
         }
     };
@@ -843,70 +776,44 @@ namespace {
     class EvalCommandParser
         : public SpecialCommandParser
     {
-        Buffer::iterator begin;
+        Buffer::iterator cmd_begin;
         KeySlotCalc slot_calc;
-
         int arg_count;
-        std::vector<byte> count_bytes;
         int key_count;
-
-        std::function<void(EvalCommandParser*, byte)> _on_byte;
-
-        static void skip_byte(EvalCommandParser*, byte) {}
-
-        static void get_key_count(EvalCommandParser* me, byte b)
-        {
-            me->count_bytes.push_back(b);
-        }
-
-        static void key_calc(EvalCommandParser* me, byte b)
-        {
-            me->slot_calc.next_byte(b);
-        }
     public:
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            this->_on_byte(this, b);
-        }
-
-        void on_element(Buffer::iterator)
-        {
-            switch (arg_count) {
+            switch (this->arg_count++) {
                 case 0:
-                    this->_on_byte = EvalCommandParser::get_key_count;
-                    break;
+                    return;
                 case 1:
-                    {
-                        count_bytes.push_back('\r');
-                        count_bytes.push_back('\n');
-                        auto r = cerb::msg::btoi(count_bytes.begin(), count_bytes.end());
-                        this->key_count = r.first;
-                        this->_on_byte = EvalCommandParser::key_calc;
+                    this->key_count = util::atoi(std::string(begin, end));
+                    return;
+                case 2:
+                    for (; begin != end; ++begin) {
+                        this->slot_calc.next_byte(*begin);
                     }
-                    break;
+                    return;
                 default:
-                    this->_on_byte = EvalCommandParser::skip_byte;
-                    break;
+                    return;
             }
-            ++arg_count;
         }
 
         explicit EvalCommandParser(Buffer::iterator begin)
-            : begin(begin)
+            : cmd_begin(begin)
             , arg_count(0)
             , key_count(0)
-            , _on_byte(EvalCommandParser::skip_byte)
         {}
 
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (arg_count < 3 || key_count != 1) {
+            if (this->arg_count < 3 || this->key_count != 1) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'eval' command\r\n"));
             }
             return util::mkptr(new SingleCommandGroup(
-                c, Buffer(begin, end), this->slot_calc.get_slot()));
+                c, Buffer(this->cmd_begin, end), this->slot_calc.get_slot()));
         }
     };
 
@@ -916,8 +823,7 @@ namespace {
         Buffer::iterator begin;
         int arg_count;
     public:
-        void on_byte(byte) {}
-        void on_element(Buffer::iterator)
+        void on_str(Buffer::iterator, Buffer::iterator)
         {
             ++this->arg_count;
         }
@@ -945,45 +851,25 @@ namespace {
         Buffer::iterator _arg_start;
         int _arg_count;
         slot _slot;
-        bool _error;
-
-        std::function<void(KeysInSlotParser*, byte)> _on_byte;
-
-        static void _calc_slot(KeysInSlotParser* me, byte b)
-        {
-            if (b >= '0' && b <= '9') {
-                me->_slot = me->_slot * 10 + (b - '0');
-            } else {
-                me->_on_byte = KeysInSlotParser::_skip_byte;
-                me->_error = true;
-            }
-        }
-
-        static void _skip_byte(KeysInSlotParser*, byte) {}
     public:
-        void on_byte(byte b)
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
         {
-            this->_on_byte(this, b);
-        }
-
-        void on_element(Buffer::iterator)
-        {
-            ++_arg_count;
-            this->_on_byte = KeysInSlotParser::_skip_byte;
+            if (this->_arg_count == 0) {
+                this->_slot = util::atoi(std::string(begin, end));
+            }
+            ++this->_arg_count;
         }
 
         explicit KeysInSlotParser(Buffer::iterator arg_start)
             : _arg_start(arg_start)
             , _arg_count(0)
             , _slot(0)
-            , _error(false)
-            , _on_byte(KeysInSlotParser::_calc_slot)
         {}
 
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
-            if (this->_arg_count != 2 || this->_error || this->_slot >= CLUSTER_SLOT_COUNT) {
+            if (this->_arg_count != 2 || this->_slot >= CLUSTER_SLOT_COUNT) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong arguments for 'keysinslot' command\r\n"));
             }
@@ -997,9 +883,9 @@ namespace {
         Buffer::iterator, Buffer::iterator)>> SPECIAL_RSP(
     {
         {"PING",
-            [](Buffer::iterator, Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator)
             {
-                return util::mkptr(new PingCommandParser(arg_start));
+                return util::mkptr(new PingCommandParser);
             }},
         {"INFO",
             [](Buffer::iterator, Buffer::iterator)
@@ -1054,88 +940,44 @@ namespace {
         : public cerb::msg::MessageSplitterBase<
             Buffer::iterator, ClientCommandSplitter>
     {
-        typedef cerb::msg::MessageSplitterBase<
-            Buffer::iterator, ClientCommandSplitter> BaseType;
+        typedef Buffer::iterator Iterator;
+        typedef cerb::msg::MessageSplitterBase<Iterator, ClientCommandSplitter> BaseType;
 
-        std::function<void(ClientCommandSplitter&, byte)> _on_byte;
-        std::function<void(ClientCommandSplitter&, Buffer::iterator)> _on_element;
+        std::function<void(ClientCommandSplitter&, Iterator, Iterator)> _on_str;
 
-        void _call_base_on_element(Buffer::iterator it)
+        static void on_string_nop(ClientCommandSplitter&, Iterator, Iterator) {}
+
+        static void on_command_head(ClientCommandSplitter& s, Iterator begin, Iterator end)
         {
-            BaseType::on_element(it);
+            s.select_command_parser(begin, end);
         }
 
-        static void on_raw_element(ClientCommandSplitter& s, Buffer::iterator i)
-        {
-            s.client->push_command(quick_rsp(s.last_command, s.client));
-            s.last_command_begin = i;
-            s._call_base_on_element(i);
-        }
-
-        static void on_command_arr_first_element(ClientCommandSplitter& s, Buffer::iterator it)
-        {
-            s.select_command_parser(it);
-            s._call_base_on_element(it);
-        }
-
-        static void on_command_key(ClientCommandSplitter& s, Buffer::iterator i)
+        static void on_command_key(ClientCommandSplitter& s, Iterator begin, Iterator end)
         {
             s.last_command_is_bad = false;
-            s._on_byte = [](ClientCommandSplitter&, byte) {};
-            s._on_element = ClientCommandSplitter::base_type_on_element;
-            s._call_base_on_element(i);
+            s._on_str = ClientCommandSplitter::on_string_nop;
+            std::for_each(begin, end, [&](byte b) { s.slot_calc.next_byte(b); });
         }
 
-        static void on_command_byte(ClientCommandSplitter& s, byte b)
+        static void special_parser_on_str(ClientCommandSplitter& s, Iterator begin, Iterator end)
         {
-            s.last_command += std::toupper(b);
-        }
-
-        static void on_key_byte(ClientCommandSplitter& s, byte b)
-        {
-            s.slot_calc.next_byte(b);
-        }
-
-        static void special_parser_on_byte(ClientCommandSplitter& s, byte b)
-        {
-            s.special_parser->on_byte(b);
-        }
-
-        static void special_parser_on_element(ClientCommandSplitter& s, Buffer::iterator it)
-        {
-            s.special_parser->on_element(it);
-            s._call_base_on_element(it);
-        }
-
-        static void base_type_on_element(ClientCommandSplitter& s, Buffer::iterator it)
-        {
-            s._call_base_on_element(it);
+            s.special_parser->on_str(begin, end);
         }
     public:
-        Buffer::iterator last_command_begin;
-
-        std::string last_command;
+        Iterator last_command_begin;
         KeySlotCalc slot_calc;
         bool last_command_is_bad;
-
-        void on_byte(byte b)
-        {
-            _on_byte(*this, b);
-        }
-
-        void on_element(Buffer::iterator i)
-        {
-            _on_element(*this, i);
-        }
-
         util::sptr<SpecialCommandParser> special_parser;
-
         util::sref<Client> client;
 
-        ClientCommandSplitter(Buffer::iterator i, util::sref<Client> cli)
+        void on_string(Iterator begin, Iterator end)
+        {
+            this->_on_str(*this, begin, end);
+        }
+
+        ClientCommandSplitter(Iterator i, util::sref<Client> cli)
             : BaseType(i)
-            , _on_byte(ClientCommandSplitter::on_command_byte)
-            , _on_element(ClientCommandSplitter::on_raw_element)
+            , _on_str(ClientCommandSplitter::on_command_head)
             , last_command_begin(i)
             , last_command_is_bad(false)
             , special_parser(nullptr)
@@ -1144,67 +986,61 @@ namespace {
 
         ClientCommandSplitter(ClientCommandSplitter&& rhs)
             : BaseType(std::move(rhs))
-            , _on_byte(std::move(rhs._on_byte))
-            , _on_element(std::move(rhs._on_element))
+            , _on_str(std::move(rhs._on_str))
             , last_command_begin(rhs.last_command_begin)
-            , last_command(std::move(rhs.last_command))
             , slot_calc(std::move(rhs.slot_calc))
             , last_command_is_bad(rhs.last_command_is_bad)
             , special_parser(std::move(rhs.special_parser))
             , client(rhs.client)
         {}
 
-        bool handle_standard_key_command()
+        bool handle_standard_key_command(std::string const& command)
         {
-            auto i = STD_COMMANDS.find(last_command);
+            auto i = STD_COMMANDS.find(command);
             if (i == STD_COMMANDS.end()) {
                 return false;
             }
             this->last_command_is_bad = true;
-            this->_on_byte = ClientCommandSplitter::on_key_byte;
-            this->_on_element = ClientCommandSplitter::on_command_key;
+            this->_on_str = ClientCommandSplitter::on_command_key;
             return true;
         }
 
-        void select_command_parser(Buffer::iterator it)
+        void select_command_parser(Iterator begin, Iterator end)
         {
-            if (handle_standard_key_command()) {
+            std::string cmd;
+            std::for_each(begin, end, [&](byte b) { cmd += std::toupper(b); });
+            if (this->handle_standard_key_command(cmd)) {
                 return;
             }
-            auto sfi = SPECIAL_RSP.find(last_command);
+            auto sfi = SPECIAL_RSP.find(cmd);
             if (sfi != SPECIAL_RSP.end()) {
-                special_parser = sfi->second(last_command_begin, it);
-                this->_on_byte = ClientCommandSplitter::special_parser_on_byte;
-                this->_on_element = ClientCommandSplitter::special_parser_on_element;
+                this->special_parser = sfi->second(last_command_begin, end + msg::LENGTH_OF_CR_LF);
+                this->_on_str = ClientCommandSplitter::special_parser_on_str;
                 return;
             }
-            last_command_is_bad = true;
-            this->_on_byte = [](ClientCommandSplitter&, byte) {};
-            this->_on_element = ClientCommandSplitter::base_type_on_element;
+            this->last_command_is_bad = true;
+            this->_on_str = ClientCommandSplitter::on_string_nop;
         }
 
-        void on_arr_end(Buffer::iterator i)
+        void on_split_point(Iterator i)
         {
-            this->_on_byte = ClientCommandSplitter::on_command_byte;
-            this->_on_element = ClientCommandSplitter::on_raw_element;
-            if (last_command_is_bad) {
-                client->push_command(util::mkptr(new DirectCommandGroup(
+            this->_on_str = ClientCommandSplitter::on_command_head;
+            if (this->last_command_is_bad) {
+                this->client->push_command(util::mkptr(new DirectCommandGroup(
                     client, "-ERR Unknown command or command key not specified\r\n")));
-            } else if (special_parser.nul()) {
-                client->push_command(util::mkptr(new SingleCommandGroup(
-                    client, Buffer(last_command_begin, i), slot_calc.get_slot())));
+            } else if (this->special_parser.nul()) {
+                this->client->push_command(util::mkptr(new SingleCommandGroup(
+                    client, Buffer(this->last_command_begin, i), this->slot_calc.get_slot())));
             } else {
-                client->push_command(special_parser->spawn_commands(client, i));
-                special_parser.reset();
+                this->client->push_command(this->special_parser->spawn_commands(this->client, i));
+                this->special_parser.reset();
             }
-            last_command.clear();
-            last_command_begin = i;
-            slot_calc.reset();
-            last_command_is_bad = false;
-            BaseType::on_element(i);
+            this->last_command_begin = i;
+            this->slot_calc.reset();
+            this->last_command_is_bad = false;
         }
 
-        void on_arr(cerb::rint size, Buffer::iterator i)
+        void on_array(cerb::rint size)
         {
             /*
              * Redis server will reset a request of more than 1M args.
@@ -1214,15 +1050,12 @@ namespace {
             if (size > 1024 * 1024) {
                 throw BadRedisMessage("Request is too large");
             }
-            if (!_nested_array_element_count.empty()) {
+            if (!this->_nested_array_element_count.empty()) {
                 throw BadRedisMessage("Invalid nested array as client command");
             }
-            BaseType::on_arr(size, i);
             if (size == 0) {
                 return;
             }
-            this->_on_byte = ClientCommandSplitter::on_command_byte;
-            this->_on_element = ClientCommandSplitter::on_command_arr_first_element;
         }
     };
 

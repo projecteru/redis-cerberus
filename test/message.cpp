@@ -8,10 +8,9 @@ using cerb::msg::MessageInterrupted;
 
 namespace {
 
-    typedef std::string::iterator InputIterator;
+    typedef std::string::iterator Iterator;
 
-    class SimpleMessageCollector {
-    public:
+    struct SimpleMessageCollector {
         rint last_int;
         std::string last_string;
         std::string last_simple_string;
@@ -21,14 +20,14 @@ namespace {
             : last_int(0)
         {}
 
-        InputIterator on_int(rint val, InputIterator next)
+        Iterator on_int(rint val, Iterator next)
         {
             this->last_int = val;
             return next;
         }
 
-        static std::pair<InputIterator, std::string>
-            get_simple_string(InputIterator begin, InputIterator end)
+        static std::pair<Iterator, std::string>
+            get_simple_string(Iterator begin, Iterator end)
         {
             std::string r;
             while (begin != end) {
@@ -44,31 +43,31 @@ namespace {
             return std::make_pair(end, r);
         }
 
-        InputIterator on_sstr(InputIterator begin, InputIterator end)
+        Iterator on_sstr(Iterator begin, Iterator end)
         {
             auto r = get_simple_string(begin, end);
             this->last_simple_string = r.second;
             return r.first;
         }
 
-        InputIterator on_str(rint size, InputIterator begin, InputIterator)
+        Iterator on_lstr(rint size, Iterator begin, Iterator)
         {
             last_string = std::string(begin, begin + size);
             return begin + size + 2;
         }
 
-        void on_arr(rint, InputIterator)
+        void on_arr(rint, Iterator)
         {
             EXPECT_TRUE(false) << "unexpected call on_arr";
         }
 
-        InputIterator on_nil(InputIterator n)
+        Iterator on_nil(Iterator n)
         {
             EXPECT_TRUE(false) << "unexpected call on_nil";
             return n;
         }
 
-        InputIterator on_err(InputIterator begin, InputIterator end)
+        Iterator on_err(Iterator begin, Iterator end)
         {
             auto r = get_simple_string(begin, end);
             this->last_error = r.second;
