@@ -20,6 +20,9 @@ namespace cerb_global {
     void set_cluster_req_full_cov(bool c);
     bool cluster_req_full_cov();
 
+    void set_cluster_ok(bool ok);
+    bool cluster_ok();
+
 }
 
 #endif /* __CERBERUS_GLOBALS_HPP__ */

@@ -8,6 +8,7 @@ thread_local cerb::msize_t cerb_global::allocated_buffer(0);
 
 static std::mutex remote_addrs_mutex;
 static std::set<util::Address> remote_addrs;
+static bool cluster_ok = false;
 
 void cerb_global::set_remotes(std::set<util::Address> remotes)
 {
@@ -31,4 +32,14 @@ void cerb_global::set_cluster_req_full_cov(bool c)
 bool cerb_global::cluster_req_full_cov()
 {
     return ::req_full_cov;
+}
+
+void cerb_global::set_cluster_ok(bool ok)
+{
+    ::cluster_ok = ok;
+}
+
+bool cerb_global::cluster_ok()
+{
+    return ::cluster_ok;
 }

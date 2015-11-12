@@ -39,6 +39,7 @@ std::string cerb::stats_all()
     return util::join("", {
         "version:" VERSION
         "\nthreads:", util::str(msize_t(cerb_global::all_threads.size())),
+        "\ncluster_ok:", cerb_global::cluster_ok() ? "1" : "0",
         "\nread_slave:", ::read_slave ? "1" : "0",
         "\nclients_count:", util::join(",", clients_counts),
         "\nlong_connections_count:", util::join(",", long_conns_counts),
