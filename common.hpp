@@ -5,7 +5,7 @@
 
 #include "utils/typetraits.hpp"
 
-#define VERSION "0.7.4-2015-10-22"
+#define VERSION "0.7.5-2015-11-12"
 
 namespace cerb {
 

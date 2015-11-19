@@ -128,6 +128,7 @@ void Proxy::_set_slot_map(std::vector<RedisNode> const& map,
     _server_map.replace_map(map, this);
     _slot_map_expired = false;
     cerb_global::set_remotes(std::move(remotes));
+    cerb_global::set_cluster_ok(true);
     LOG(INFO) << "Slot map updated";
     LOG(DEBUG) << "Retry MOVED or ASK: " << this->_retrying_commands.size();
     if (this->_retrying_commands.empty()) {
@@ -178,6 +179,7 @@ void Proxy::_update_slot_map_failed()
     }
 
     this->_move_closed_slot_updaters();
+    cerb_global::set_cluster_ok(false);
     LOG(DEBUG) << "Failed to retrieve slot map, discard all commands.";
     _server_map.clear();
     std::vector<util::sref<DataCommand>> cmds(std::move(this->_retrying_commands));

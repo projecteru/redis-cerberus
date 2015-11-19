@@ -26,11 +26,11 @@ void Server::on_events(int events)
         try {
             this->_recv_from();
         } catch (BadRedisMessage& e) {
-            LOG(FATAL) << "Receive bad message from server " << this->str()
+            LOG(ERROR) << "Receive bad message from server " << this->str()
                        << " because: " << e.what()
                        << " dump buffer (before close): "
                        << this->_buffer.to_string();
-            exit(1);
+            return this->close_conn();
         }
     }
     this->_push_to_buffer_set();
@@ -70,8 +70,7 @@ void Server::_recv_from()
             LOG(ERROR) << "::: " << rsp->get_buffer().to_string();
         }
         LOG(ERROR) << "Rest buffer: " << this->_buffer.to_string();
-        LOG(FATAL) << "Exit";
-        exit(1);
+        return this->close_conn();
     }
     LOG(DEBUG) << "+responses size: " << responses.size();
     LOG(DEBUG) << "+rest buffer: " << this->_buffer.size();
