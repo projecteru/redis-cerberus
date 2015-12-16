@@ -50,7 +50,7 @@ void Client::on_events(int events)
             this->_proxy->set_conn_poll_rw(this);
         }
     } catch (BadRedisMessage& e) {
-        LOG(INFO) << fmt::format("Receive bad message from {} because {}", this->str(), e.what());
+        LOG(DEBUG) << fmt::format("Receive bad message from {} because {}", this->str(), e.what());
         LOG(DEBUG) << "Dump buffer " << this->_buffer.to_string();
         return this->close();
     } catch (IOErrorBase& e) {
