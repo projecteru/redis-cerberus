@@ -2,7 +2,7 @@ import time
 import string
 import subprocess
 import unittest
-from redistrib.clusternode import Talker
+import redis
 
 import cluster_launcher
 
@@ -22,77 +22,103 @@ def main():
 
 class ScriptTest(unittest.TestCase):
     def setUp(self):
-        self.t = Talker('127.0.0.1', 27182)
-
-    def tearDown(self):
-        self.t.close()
+        self.t = redis.Redis(host='127.0.0.1', port=27182)
 
     def test_key_commands(self):
-        self.assertEqual(
-            'ok', self.t.talk('set', 'quick', 'brown fox').lower())
-        self.assertEqual('brown fox', self.t.talk('get', 'quick'))
-        self.assertEqual('ok', self.t.talk('set', 'year', '2010').lower())
-        self.assertEqual(2011, self.t.talk('incr', 'year'))
-        self.assertEqual('2011', self.t.talk('get', 'year'))
+        self.assertTrue(self.t.set('quick', 'brown fox'))
+        self.assertEqual('brown fox', self.t.get('quick'))
+        self.assertTrue(self.t.set('year', '2010'))
+        self.assertEqual(2011, self.t.incr('year'))
+        self.assertEqual('2011', self.t.get('year'))
 
     def test_list_commands(self):
-        self.assertEqual(1, self.t.talk('lPush', 'list0', 'xxx'))
-        self.assertEqual(['xxx'], self.t.talk('lrange', 'list0', '0', '-1'))
-        self.assertEqual(3, self.t.talk('lPush', 'list0', 'yyy', 'zzz'))
+        self.assertEqual(1, self.t.lpush('list0', 'xxx'))
+        self.assertEqual(['xxx'], self.t.lrange('list0', '0', '-1'))
+        self.assertEqual(3, self.t.lpush('list0', 'yyy', 'zzz'))
         self.assertEqual(['zzz', 'yyy', 'xxx'],
-                         self.t.talk('lrange', 'list0', '0', '-1'))
-        self.assertEqual(2, self.t.talk('lPush', 'list1', 'aaa', 'ddd'))
-        self.assertEqual(4, self.t.talk('lPush', 'list1', 'bbb', 'ccc'))
-        self.assertEqual(['bbb', 'ddd'],
-                         self.t.talk('lrange', 'list1', '1', '2'))
-        self.t.talk('del', 'list0', 'list1')
+                         self.t.lrange('list0', '0', '-1'))
+        self.assertEqual(2, self.t.lpush('list1', 'aaa', 'ddd'))
+        self.assertEqual(4, self.t.lpush('list1', 'bbb', 'ccc'))
+        self.assertEqual(['bbb', 'ddd'], self.t.lrange('list1', '1', '2'))
+        self.assertEqual(2, self.t.delete('list0', 'list1'))
 
     def test_set_commands(self):
-        self.assertEqual(1, self.t.talk('sadd', 'sssset', 'xxx'))
-        self.assertEqual('xxx', self.t.talk('srandmember', 'sssset'))
-        self.assertEqual(['xxx'], self.t.talk('smembers', 'sssset'))
-        self.t.talk('del', 'sssset')
+        self.assertEqual(1, self.t.sadd('sssset', 'xxx'))
+        self.assertEqual('xxx', self.t.srandmember('sssset'))
+        self.assertEqual(2, self.t.sadd('sssset', 'yyy', 'zzz'))
+        self.assertEqual({'xxx', 'yyy', 'zzz'}, self.t.smembers('sssset'))
+        self.assertEqual(1, self.t.delete('sssset'))
 
     def test_multiple_keys_commands(self):
         p = string.digits + string.ascii_lowercase + string.ascii_uppercase
         for c in p:
-            self.assertEqual('ok', self.t.talk(
-                'mset', *sum([[c + d, d + c] for d in p], [])).lower())
+            self.assertTrue(self.t.mset({c + d: d + c for d in p}))
         for c in p:
             self.assertEqual([c + b for b in p],
-                             self.t.talk('mget', *[b + c for b in p]))
+                             self.t.mget(*[b + c for b in p]))
+        for c in p:
+            self.assertEqual(len(p), self.t.delete(*[b + c for b in p]))
+
+    def test_multiple_keys_commands_for_single_key(self):
+        self.assertTrue(self.t.mset({'k078': 'v078'}))
+        self.assertEqual(['v078'], self.t.mget('k078'))
+        self.assertEqual(1, self.t.delete('k078'))
+        self.assertEqual(0, self.t.delete('k078'))
+
+    def test_multiple_del(self):
+        self.assertTrue(self.t.mset({
+            'k078': 'v078',
+            'kk078': 'vv078',
+            'k20160229': 'v20160229',
+        }))
+        self.assertEqual(2, self.t.delete('k078', 'kk078', 'kkk078', '-'))
+        self.assertEqual(1, self.t.delete('k078', 'kk078', 'k20160229'))
+        self.assertEqual(0, self.t.delete('k078', 'kk078', 'k20160229'))
 
     def test_bulk_commands(self):
         p = string.digits + string.ascii_lowercase + string.ascii_uppercase
+        pipe = self.t.pipeline(transaction=False)
         for c in p:
-            self.assertEqual(['OK'] * len(p), self.t.talk_bulk(
-                [['set', '.' + c + d, d + c] for d in p]))
+            for d in p:
+                pipe.set('.' + c + d, d + c)
+            self.assertEqual([True] * len(p), pipe.execute())
+        pipe = self.t.pipeline(transaction=False)
         for c in p:
-            self.assertEqual([c + b for b in p], self.t.talk_bulk(
-                [['get', '.' + b + c] for b in p]))
+            for b in p:
+                pipe.get('.' + b + c)
+            self.assertEqual([c + b for b in p], pipe.execute())
 
     def test_large_pipes(self):
-        r = self.t.talk_bulk([['set', 'Key:%016d' % i, 'Value:%026d' % i]
-                              for i in xrange(1000)])
-        self.assertEqual(['OK'] * 1000, r)
-        r = self.t.talk_bulk([['gEt', 'Key:%016d' % i] for i in xrange(2000)])
+        pipe = self.t.pipeline(transaction=False)
+        for i in xrange(1000):
+            pipe.set('Key:%016d' % i, 'Value:%026d' % i)
+        self.assertEqual([True] * 1000, pipe.execute())
+
+        pipe = self.t.pipeline(transaction=False)
+        for i in xrange(2000):
+            pipe.get('Key:%016d' % i)
+        r = pipe.execute()
         self.assertEqual(2000, len(r))
         self.assertEqual(['Value:%026d' % i for i in xrange(1000)], r[:1000])
         self.assertEqual([None] * 1000, r[1000:])
 
     def test_list_pipes(self):
-        r = self.t.talk_bulk([['lpush', 'list_bulk', 'Value:%026d' % i]
-                              for i in xrange(1000)])
-        self.assertEqual(range(1, 1001), r)
-        r = self.t.talk_bulk([['lrange', 'list_bulk', '%d' % i, '%d' % (i + 5)]
-                              for i in xrange(500)])
+        pipe = self.t.pipeline(transaction=False)
+        for i in xrange(1000):
+            pipe.lpush('list_bulk', 'Value:%026d' % i)
+        self.assertEqual(range(1, 1001), pipe.execute())
+
+        pipe = self.t.pipeline(transaction=False)
+        for i in xrange(500):
+            pipe.lrange('list_bulk', '%d' % i, '%d' % (i + 5))
+        r = pipe.execute()
         for i in xrange(500):
             expected = ['Value:%026d' % (999 - j - i) for j in xrange(6)]
             self.assertEqual(expected, r[i],
                              msg='at %d: %s <> %s' % (i, expected, r[i]))
 
     def test_eval(self):
-        r = self.t.talk('eval', 'return KEYS[1]', '1', 'a')
+        r = self.t.eval('return KEYS[1]', '1', 'a')
         self.assertEqual('a', r)
 
 if __name__ == '__main__':
