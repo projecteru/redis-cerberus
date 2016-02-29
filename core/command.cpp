@@ -222,10 +222,8 @@ namespace {
         void command_responsed()
         {
             if (--this->awaiting_count == 0) {
-                if (1 < this->commands.size()) {
-                    this->arr_payload->swap(Buffer(
-                        fmt::format("*{}\r\n", this->commands.size())));
-                }
+                this->arr_payload->swap(Buffer(
+                    fmt::format("*{}\r\n", this->commands.size())));
                 this->client->group_responsed();
                 this->complete = true;
             }
@@ -425,6 +423,11 @@ namespace {
         std::vector<slot> keys_slots;
 
         virtual Buffer command_header() const = 0;
+
+        virtual util::sptr<MultipleCommandsGroup> makeGroup(util::sref<Client> c) const
+        {
+            return util::mkptr(new MultipleCommandsGroup(c));
+        }
     public:
         EachKeyCommandParser(Buffer::iterator arg_begin, std::string cmd)
             : command_name(std::move(cmd))
@@ -449,7 +452,7 @@ namespace {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for '" + this->command_name + "' command\r\n"));
             }
-            util::sptr<MultipleCommandsGroup> g(new MultipleCommandsGroup(c));
+            util::sptr<MultipleCommandsGroup> g(this->makeGroup(c));
             for (unsigned i = 0; i < keys_slots.size(); ++i) {
                 Buffer b(command_header());
                 b.append_from(this->keys_split_points[i], this->keys_split_points[i + 1]);
@@ -476,6 +479,35 @@ namespace {
     class DelCommandParser
         : public EachKeyCommandParser
     {
+        class DelCommandGroup
+            : public MultipleCommandsGroup
+        {
+        public:
+            explicit DelCommandGroup(util::sref<Client> c)
+                : MultipleCommandsGroup(c)
+            {}
+
+            void append_buffer_to(BufferSet& b)
+            {
+                cerb::rint count = 0;
+                for (auto const& c: this->commands) {
+                    count += std::find(c->buffer->begin(), c->buffer->end(), '1') == c->buffer->end() ? 0 : 1;
+                }
+                this->arr_payload->swap(Buffer(":" + util::str(count) + "\r\n"));
+                b.append(this->arr_payload);
+            }
+
+            int total_buffer_size() const
+            {
+                return RSP_OK->size();
+            }
+        };
+
+        util::sptr<MultipleCommandsGroup> makeGroup(util::sref<Client> c) const
+        {
+            return util::mkptr(new DelCommandGroup(c));
+        }
+
         Buffer command_header() const
         {
             return Buffer("*2\r\n$3\r\nDEL\r\n");
