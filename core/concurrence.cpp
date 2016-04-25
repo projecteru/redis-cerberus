@@ -2,13 +2,11 @@
 #include "globals.hpp"
 #include "except/exceptions.hpp"
 #include "utils/logging.hpp"
-#include "acceptor.hpp"
 
 using namespace cerb;
 
 ListenThread::ListenThread(int listen_port)
-    : _listen_port(listen_port)
-    , _proxy(new Proxy)
+    : _proxy(new Proxy(listen_port))
     , _thread(nullptr)
     , _mem_buffer_stat(nullptr)
 {}
@@ -20,7 +18,6 @@ void ListenThread::run()
         {
             _mem_buffer_stat = &cerb_global::allocated_buffer;
             try {
-                cerb::Acceptor acc(*this->_proxy, this->_listen_port);
                 poll::pevent events[poll::MAX_EVENTS];
                 while (true) {
                     int nfds = poll::poll_wait(this->_proxy->epfd, events, poll::MAX_EVENTS, -1);

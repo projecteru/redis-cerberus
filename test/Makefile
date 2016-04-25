@@ -11,7 +11,7 @@ else
 endif
 
 MOCK_OBJS=$(TESTDIR)/mock-stats.o $(TESTDIR)/mock-io.o $(TESTDIR)/mock-poll.o \
-          $(TESTDIR)/mock-acceptor.o
+          $(TESTDIR)/mock-acceptor.o $(TESTDIR)/test-main.o
 
 test:core-objs buffer-test util-test slot-map-test server-client-test \
      event-loop-test script-test
@@ -74,7 +74,7 @@ event-loop-test:event-loop-test.dt mock-suit event-loop-data-proxy.dt \
 script-test:
 	@python test/script_test.py
 
-mock-suit:mock-stats.dt mock-io.dt mock-poll.dt mock-acceptor.dt
+mock-suit:mock-stats.dt mock-io.dt mock-poll.dt mock-acceptor.dt test-main.dt
 	@true
 
 clean:

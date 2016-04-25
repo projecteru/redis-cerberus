@@ -7,6 +7,7 @@
 #include "command.hpp"
 #include "slot_map.hpp"
 #include "connection.hpp"
+#include "acceptor.hpp"
 #include "utils/pointer.h"
 #include "syscalls/poll.h"
 
@@ -78,6 +79,7 @@ namespace cerb {
         Interval _last_cmd_elapse;
         Interval _last_remote_cost;
         bool _slot_map_expired;
+        bool _fd_closed;
         std::map<Connection*, bool> _conn_poll_type;
 
         bool _should_update_slot_map() const;
@@ -89,8 +91,9 @@ namespace cerb {
         void _move_closed_slot_updaters();
     public:
         int epfd;
+        Acceptor acceptor;
 
-        Proxy();
+        explicit Proxy(int listen_port);
         ~Proxy();
 
         Proxy(Proxy const&) = delete;
@@ -108,6 +111,11 @@ namespace cerb {
         int clients_count() const
         {
             return _clients_count;
+        }
+
+        bool accepting() const
+        {
+            return this->acceptor.accepting();
         }
 
         void incr_long_conn()

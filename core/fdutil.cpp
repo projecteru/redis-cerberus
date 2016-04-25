@@ -1,5 +1,6 @@
 #include "fdutil.hpp"
 #include "syscalls/cio.h"
+#include "utils/logging.hpp"
 
 using namespace cerb;
 
@@ -16,6 +17,7 @@ bool FDWrapper::closed() const
 void FDWrapper::close()
 {
     if (!this->closed()) {
+        LOG(DEBUG) << "CLOSE fd=" << this->fd;
         cio::close(this->fd);
         this->fd = -1;
     }

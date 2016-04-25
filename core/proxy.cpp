@@ -105,7 +105,7 @@ std::string SlotsMapUpdater::str() const
                        static_cast<void const*>(this), this->addr.str());
 }
 
-Proxy::Proxy()
+Proxy::Proxy(int listen_port)
     : _clients_count(0)
     , _long_conns_count(0)
     , _total_cmd_elapse(0)
@@ -114,8 +114,12 @@ Proxy::Proxy()
     , _last_cmd_elapse(0)
     , _last_remote_cost(0)
     , _slot_map_expired(true)
+    , _fd_closed(false)
     , epfd(poll::poll_create())
-{}
+    , acceptor(this, listen_port)
+{
+    this->acceptor.turn_on_accepting();
+}
 
 Proxy::~Proxy()
 {
@@ -280,6 +284,7 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
     std::set<Connection*> active_conns;
     for (Connection* c: this->_inactive_long_connections) {
         c->close();
+        this->_fd_closed = true;
     }
     std::set<Connection*> closed_conns(std::move(this->_inactive_long_connections));
 
@@ -313,6 +318,10 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
          */
         ::poll_ctl(this, std::move(this->_conn_poll_type));
     }
+    if (this->_fd_closed) {
+        this->_fd_closed = false;
+        this->acceptor.turn_on_accepting();
+    }
     LOG(DEBUG) << "*poll done";
 }
 
@@ -324,6 +333,7 @@ Server* Proxy::get_server_by_slot(slot key_slot)
 
 void Proxy::new_client(int client_fd)
 {
+    LOG(DEBUG) << fmt::format("ACCEPT CLIENT fd={}", client_fd);
     new Client(client_fd, this);
     ++this->_clients_count;
 }
@@ -338,6 +348,7 @@ void Proxy::pop_client(Client* cli)
             return cmd->group->client.is(cli);
         });
     --this->_clients_count;
+    this->_fd_closed = true;
 }
 
 void Proxy::stat_proccessed(Interval cmd_elapse, Interval remote_cost)

@@ -3,22 +3,20 @@
 
 #include <chrono>
 
-#include "utils/typetraits.hpp"
-
-#define VERSION "0.7.8-2016-02-26"
+#define VERSION "0.7.9-2016-04-25"
 
 namespace cerb {
 
-    typedef tp::UInt<1>::type byte;
-    typedef tp::Int<8>::type rint;
-    typedef unsigned int slot;
-    typedef tp::UInt<8>::type msize_t;
+    using byte = unsigned char;
+    using rint = int64_t;
+    using slot = unsigned int;
+    using msize_t = uint64_t;
 
     typedef std::chrono::high_resolution_clock Clock;
     typedef Clock::time_point Time;
     typedef std::chrono::duration<double> Interval;
 
-    msize_t const CLUSTER_SLOT_COUNT = 16384;
+    constexpr msize_t CLUSTER_SLOT_COUNT = 16384;
 
 }
 

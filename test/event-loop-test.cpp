@@ -58,15 +58,13 @@ int AutomaticPoller::poll_wait(poll::pevent events[], int maxevents)
 }
 
 util::sptr<cerb::Proxy> EventLoopTest::proxy(nullptr);
-util::sptr<cerb::Acceptor> EventLoopTest::acceptor(nullptr);
 util::sref<AutomaticPoller> EventLoopTest::poll_obj(nullptr);
 util::sref<MultipleBuffersIO> EventLoopTest::io_obj(nullptr);
 
 void EventLoopTest::SetUp()
 {
     set_acceptor_fd_gen([]() {return EventLoopTest::io_obj->new_stream_socket();});
-    EventLoopTest::proxy.reset(new cerb::Proxy);
-    EventLoopTest::acceptor.reset(new cerb::Acceptor(*EventLoopTest::proxy, 0));
+    EventLoopTest::proxy.reset(new cerb::Proxy(0));
 
     util::sptr<AutomaticPoller> p(new AutomaticPoller);
     EventLoopTest::poll_obj = *p;
@@ -97,6 +95,5 @@ void EventLoopTest::TearDown()
     EventLoopTest::poll_obj.reset();
     PollNotImplement::set_impl(util::mkptr(new PollNotImplement));
 
-    EventLoopTest::acceptor.reset(nullptr);
     EventLoopTest::proxy.reset(nullptr);
 }

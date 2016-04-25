@@ -1,3 +1,5 @@
+#include <core/proxy.hpp>
+
 #include "mock-acceptor.hpp"
 
 using namespace cerb;
@@ -16,7 +18,7 @@ Acceptor* get_acceptor()
     return ::acceptor;
 }
 
-Acceptor::Acceptor(util::sref<Proxy> p, int)
+Acceptor::Acceptor(Proxy* p, int)
     : Connection(0)
     , _proxy(p)
 {
@@ -37,3 +39,5 @@ int last_client_fd()
 {
     return ::client_fd;
 }
+
+void Acceptor::turn_on_accepting() {}

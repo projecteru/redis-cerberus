@@ -67,7 +67,10 @@ ssize_t cio::writev(int fd, cio::iovec const* iov, int iovcnt)
 
 int cio::close(int fd)
 {
-    return CIOImplement::get_impl()->close(fd);
+    if (CIOImplement::get_impl().not_nul()) {
+        return CIOImplement::get_impl()->close(fd);
+    }
+    return 0;
 }
 
 int fctl::new_stream_socket()

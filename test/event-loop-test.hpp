@@ -67,7 +67,6 @@ struct EventLoopTest
     : testing::Test
 {
     static util::sptr<cerb::Proxy> proxy;
-    static util::sptr<cerb::Acceptor> acceptor;
     static util::sref<AutomaticPoller> poll_obj;
     static util::sref<MultipleBuffersIO> io_obj;
 
