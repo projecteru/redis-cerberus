@@ -911,46 +911,47 @@ namespace {
         }
     };
 
-    std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
-        Buffer::iterator, Buffer::iterator)>> SPECIAL_RSP(
+    using CmdPtr = util::sptr<SpecialCommandParser>;
+    using CmdCreateFn = CmdPtr(*)(Buffer::iterator, Buffer::iterator);
+    std::map<std::string, CmdCreateFn> SPECIAL_RSP(
     {
         {"PING",
-            [](Buffer::iterator, Buffer::iterator)
+            [](Buffer::iterator, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new PingCommandParser);
             }},
         {"INFO",
-            [](Buffer::iterator, Buffer::iterator)
+            [](Buffer::iterator, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new ProxyStatsCommandParser);
             }},
         {"PROXY",
-            [](Buffer::iterator, Buffer::iterator)
+            [](Buffer::iterator, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new ProxyStatsCommandParser);
             }},
         {"UPDATESLOTMAP",
-            [](Buffer::iterator, Buffer::iterator)
+            [](Buffer::iterator, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new UpdateSlotMapCommandParser);
             }},
         {"SETREMOTES",
-            [](Buffer::iterator, Buffer::iterator)
+            [](Buffer::iterator, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new SetRemotesCommandParser);
             }},
         {"MGET",
-            [](Buffer::iterator, Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start) -> CmdPtr
             {
                 return util::mkptr(new MGetCommandParser(arg_start));
             }},
         {"SUBSCRIBE",
-            [](Buffer::iterator command_begin, Buffer::iterator)
+            [](Buffer::iterator command_begin, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new SubscribeCommandParser(command_begin));
             }},
         {"PSUBSCRIBE",
-            [](Buffer::iterator command_begin, Buffer::iterator)
+            [](Buffer::iterator command_begin, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new SubscribeCommandParser(command_begin));
             }},
@@ -975,7 +976,8 @@ namespace {
         typedef Buffer::iterator Iterator;
         typedef cerb::msg::MessageSplitterBase<Iterator, ClientCommandSplitter> BaseType;
 
-        std::function<void(ClientCommandSplitter&, Iterator, Iterator)> _on_str;
+        using OnStrFn = void(*)(ClientCommandSplitter&, Iterator, Iterator);
+        OnStrFn _on_str;
 
         static void on_string_nop(ClientCommandSplitter&, Iterator, Iterator) {}
 
@@ -1018,7 +1020,7 @@ namespace {
 
         ClientCommandSplitter(ClientCommandSplitter&& rhs)
             : BaseType(std::move(rhs))
-            , _on_str(std::move(rhs._on_str))
+            , _on_str(rhs._on_str)
             , last_command_begin(rhs.last_command_begin)
             , slot_calc(std::move(rhs.slot_calc))
             , last_command_is_bad(rhs.last_command_is_bad)
@@ -1136,47 +1138,46 @@ void Command::allow_write_commands()
     for (std::string const& c: WRITE_COMMANDS) {
         STD_COMMANDS.insert(c);
     }
-    static std::map<std::string, std::function<util::sptr<SpecialCommandParser>(
-        Buffer::iterator, Buffer::iterator)>> const SPECIAL_WRITE_COMMAND(
+    static std::map<std::string, CmdCreateFn> const SPECIAL_WRITE_COMMAND(
     {
         {"DEL",
-            [](Buffer::iterator, Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start) -> CmdPtr
             {
                 return util::mkptr(new DelCommandParser(arg_start));
             }},
         {"MSET",
-            [](Buffer::iterator, Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start) -> CmdPtr
             {
                 return util::mkptr(new MSetCommandParser(arg_start));
             }},
         {"RENAME",
-            [](Buffer::iterator command_begin, Buffer::iterator arg_start)
+            [](Buffer::iterator command_begin, Buffer::iterator arg_start) -> CmdPtr
             {
                 return util::mkptr(new RenameCommandParser(
                     command_begin, arg_start));
             }},
         {"PUBLISH",
-            [](Buffer::iterator command_begin, Buffer::iterator)
+            [](Buffer::iterator command_begin, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new PublishCommandParser(command_begin));
             }},
         {"KEYSINSLOT",
-            [](Buffer::iterator, Buffer::iterator arg_start)
+            [](Buffer::iterator, Buffer::iterator arg_start) -> CmdPtr
             {
                 return util::mkptr(new KeysInSlotParser(arg_start));
             }},
         {"BLPOP",
-            [](Buffer::iterator command_begin, Buffer::iterator)
+            [](Buffer::iterator command_begin, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new BlockedListPopParser(command_begin));
             }},
         {"BRPOP",
-            [](Buffer::iterator command_begin, Buffer::iterator)
+            [](Buffer::iterator command_begin, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new BlockedListPopParser(command_begin));
             }},
         {"EVAL",
-            [](Buffer::iterator command_begin, Buffer::iterator)
+            [](Buffer::iterator command_begin, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new EvalCommandParser(command_begin));
             }},

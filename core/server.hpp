@@ -35,8 +35,6 @@ namespace cerb {
             , addr("", 0)
         {}
 
-        ~Server() = default;
-
         static Server* _alloc_server(util::Address const& addr, Proxy* p);
     public:
         util::Address addr;

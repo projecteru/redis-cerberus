@@ -117,6 +117,13 @@ namespace {
             cerb_global::set_cluster_req_full_cov(false);
         }
 
+        int slow_poll_ms = util::atoi(config.get("slow-poll-elapse-ms", "50"));
+        if (slow_poll_ms <= 0) {
+            LOG(ERROR) << "Invalid slow poll elapse";
+            exit(1);
+        }
+        cerb_global::slow_poll_elapse = std::chrono::milliseconds(slow_poll_ms);
+
         int bind_port = util::atoi(config.get("bind"));
         int thread_count = util::atoi(config.get("thread", "1"));
         if (thread_count <= 0) {

@@ -288,6 +288,7 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
     }
     std::set<Connection*> closed_conns(std::move(this->_inactive_long_connections));
 
+    cerb_global::poll_start = Clock::now();
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
         LOG(DEBUG) << "*poll process " << conn->str();
@@ -321,6 +322,13 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
     if (this->_fd_closed) {
         this->_fd_closed = false;
         this->acceptor.turn_on_accepting();
+    }
+    auto poll_elapse = Clock::now() - cerb_global::poll_start;
+    if (cerb_global::slow_poll_elapse < poll_elapse) {
+        LOG(INFO) << fmt::format(
+            "Poll elapse={} events={} clients={} long_clients={} slots_map_updated={}",
+            util::str(poll_elapse), nfds, this->_clients_count, this->_long_conns_count,
+            cerb_global::cluster_ok());
     }
     LOG(DEBUG) << "*poll done";
 }

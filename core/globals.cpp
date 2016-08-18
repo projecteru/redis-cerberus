@@ -6,9 +6,12 @@
 std::vector<cerb::ListenThread> cerb_global::all_threads;
 thread_local cerb::msize_t cerb_global::allocated_buffer(0);
 
+thread_local cerb::Time cerb_global::poll_start;
+cerb::Interval cerb_global::slow_poll_elapse;
+
 static std::mutex remote_addrs_mutex;
 static std::set<util::Address> remote_addrs;
-static bool cluster_ok = false;
+static std::atomic_bool cluster_ok(false);
 
 void cerb_global::set_remotes(std::set<util::Address> remotes)
 {
