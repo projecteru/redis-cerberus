@@ -8,7 +8,7 @@
 using namespace cerb;
 using cerb::msg::format_command;
 
-static Proxy fake_proxy;
+static Proxy fake_proxy(0);
 static int fd_iter = 0;
 
 static int next_fd()

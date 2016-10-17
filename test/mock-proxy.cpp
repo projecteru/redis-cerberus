@@ -3,7 +3,7 @@
 
 using namespace cerb;
 
-Proxy::Proxy()
+Proxy::Proxy(int)
     : _clients_count(0)
     , _total_cmd_elapse(0)
     , _total_remote_cost(0)
@@ -12,6 +12,7 @@ Proxy::Proxy()
     , _last_remote_cost(0)
     , _slot_map_expired(false)
     , epfd(0)
+    , acceptor(this, 0)
 {}
 
 Proxy::~Proxy() {}

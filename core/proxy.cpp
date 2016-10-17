@@ -105,7 +105,7 @@ std::string SlotsMapUpdater::str() const
                        static_cast<void const*>(this), this->addr.str());
 }
 
-Proxy::Proxy()
+Proxy::Proxy(int listen_port)
     : _clients_count(0)
     , _long_conns_count(0)
     , _total_cmd_elapse(0)
@@ -114,8 +114,12 @@ Proxy::Proxy()
     , _last_cmd_elapse(0)
     , _last_remote_cost(0)
     , _slot_map_expired(true)
+    , _fd_closed(false)
     , epfd(poll::poll_create())
-{}
+    , acceptor(this, listen_port)
+{
+    this->acceptor.turn_on_accepting();
+}
 
 Proxy::~Proxy()
 {
@@ -280,9 +284,11 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
     std::set<Connection*> active_conns;
     for (Connection* c: this->_inactive_long_connections) {
         c->close();
+        this->_fd_closed = true;
     }
     std::set<Connection*> closed_conns(std::move(this->_inactive_long_connections));
 
+    cerb_global::poll_start = Clock::now();
     for (int i = 0; i < nfds; ++i) {
         Connection* conn = static_cast<Connection*>(events[i].data.ptr);
         LOG(DEBUG) << "*poll process " << conn->str();
@@ -313,6 +319,17 @@ void Proxy::handle_events(poll::pevent events[], int nfds)
          */
         ::poll_ctl(this, std::move(this->_conn_poll_type));
     }
+    if (this->_fd_closed) {
+        this->_fd_closed = false;
+        this->acceptor.turn_on_accepting();
+    }
+    auto poll_elapse = Clock::now() - cerb_global::poll_start;
+    if (cerb_global::slow_poll_elapse < poll_elapse) {
+        LOG(INFO) << fmt::format(
+            "Poll elapse={} events={} clients={} long_clients={} slots_map_updated={}",
+            util::str(poll_elapse), nfds, this->_clients_count, this->_long_conns_count,
+            cerb_global::cluster_ok());
+    }
     LOG(DEBUG) << "*poll done";
 }
 
@@ -324,6 +341,7 @@ Server* Proxy::get_server_by_slot(slot key_slot)
 
 void Proxy::new_client(int client_fd)
 {
+    LOG(DEBUG) << fmt::format("ACCEPT CLIENT fd={}", client_fd);
     new Client(client_fd, this);
     ++this->_clients_count;
 }
@@ -338,6 +356,7 @@ void Proxy::pop_client(Client* cli)
             return cmd->group->client.is(cli);
         });
     --this->_clients_count;
+    this->_fd_closed = true;
 }
 
 void Proxy::stat_proccessed(Interval cmd_elapse, Interval remote_cost)

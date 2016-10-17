@@ -11,7 +11,7 @@ else
 endif
 
 MOCK_OBJS=$(TESTDIR)/mock-stats.o $(TESTDIR)/mock-io.o $(TESTDIR)/mock-poll.o \
-          $(TESTDIR)/mock-acceptor.o
+          $(TESTDIR)/mock-acceptor.o $(TESTDIR)/test-main.o $(OBJDIR)/globals.o
 
 test:core-objs buffer-test util-test slot-map-test server-client-test \
      event-loop-test script-test
@@ -49,7 +49,7 @@ slot-map-test:slot_map.dt mock-server.dt mock-proxy.dt mock-suit
 	$(VALGRIND) $(TESTDIR)/test-slot-map.out
 
 server-client-test:server-client.dt mock-proxy.dt mock-suit
-	$(LINK) $(TESTDIR)/server-client.o $(OBJDIR)/globals.o $(OBJDIR)/buffer.o \
+	$(LINK) $(TESTDIR)/server-client.o $(OBJDIR)/buffer.o \
 	     $(OBJDIR)/connection.o $(OBJDIR)/server.o $(OBJDIR)/client.o \
 	     $(OBJDIR)/fdutil.o $(OBJDIR)/response.o $(OBJDIR)/command.o \
 	     $(OBJDIR)/subscription.o $(OBJDIR)/message.o $(OBJDIR)/slot_calc.o \
@@ -63,7 +63,7 @@ event-loop-test:event-loop-test.dt mock-suit event-loop-data-proxy.dt \
 	$(LINK) $(TESTDIR)/event-loop-test.o utils/*.o $(MOCK_OBJS) \
 	     $(OBJDIR)/connection.o $(OBJDIR)/server.o $(OBJDIR)/client.o \
 	     $(OBJDIR)/fdutil.o $(OBJDIR)/response.o $(OBJDIR)/command.o \
-	     $(OBJDIR)/subscription.o $(OBJDIR)/message.o $(OBJDIR)/globals.o \
+	     $(OBJDIR)/subscription.o $(OBJDIR)/message.o \
 	     $(OBJDIR)/buffer.o $(OBJDIR)/slot_calc.o $(OBJDIR)/slot_map.o \
 	     $(OBJDIR)/proxy.o $(TEST_LIBS) $(TESTDIR)/event-loop-data-proxy.o \
 	     $(TESTDIR)/event-loop-long-conn.o \
@@ -74,7 +74,7 @@ event-loop-test:event-loop-test.dt mock-suit event-loop-data-proxy.dt \
 script-test:
 	@python test/script_test.py
 
-mock-suit:mock-stats.dt mock-io.dt mock-poll.dt mock-acceptor.dt
+mock-suit:mock-stats.dt mock-io.dt mock-poll.dt mock-acceptor.dt test-main.dt
 	@true
 
 clean:

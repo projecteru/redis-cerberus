@@ -10,7 +10,6 @@
 namespace cerb {
 
     class ListenThread {
-        int const _listen_port;
         util::sptr<Proxy> _proxy;
         util::sptr<std::thread> _thread;
         msize_t const* _mem_buffer_stat;
@@ -19,8 +18,7 @@ namespace cerb {
         ListenThread(ListenThread const&) = delete;
 
         ListenThread(ListenThread&& rhs)
-            : _listen_port(rhs._listen_port)
-            , _proxy(std::move(rhs._proxy))
+            : _proxy(std::move(rhs._proxy))
             , _thread(std::move(rhs._thread))
             , _mem_buffer_stat(rhs._mem_buffer_stat)
         {}

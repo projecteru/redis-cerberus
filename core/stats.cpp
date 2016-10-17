@@ -14,6 +14,7 @@ std::string cerb::stats_all()
     getrusage(RUSAGE_SELF, &res_usage);
 
     std::vector<std::string> clients_counts;
+    std::vector<std::string> acceptings;
     std::vector<std::string> long_conns_counts;
     std::vector<std::string> mem_buffer_allocs;
     std::vector<std::string> last_cmd_elapse;
@@ -24,6 +25,7 @@ std::string cerb::stats_all()
     for (auto const& thread: cerb_global::all_threads) {
         util::sref<Proxy const> proxy(thread.get_proxy());
         clients_counts.push_back(util::str(proxy->clients_count()));
+        acceptings.push_back(proxy->accepting() ? "1" : "0");
         long_conns_counts.push_back(util::str(proxy->long_conns_count()));
         total_commands += proxy->total_cmd();
         total_cmd_elapse += proxy->total_cmd_elapse();
@@ -42,6 +44,7 @@ std::string cerb::stats_all()
         "\ncluster_ok:", cerb_global::cluster_ok() ? "1" : "0",
         "\nread_slave:", ::read_slave ? "1" : "0",
         "\nclients_count:", util::join(",", clients_counts),
+        "\naccepting:", util::join(",", acceptings),
         "\nlong_connections_count:", util::join(",", long_conns_counts),
         "\nused_cpu_sys:", util::str(res_usage.ru_stime.tv_sec +
                                      res_usage.ru_stime.tv_usec / 1000000.0),

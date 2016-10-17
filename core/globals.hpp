@@ -14,6 +14,9 @@ namespace cerb_global {
     extern std::vector<cerb::ListenThread> all_threads;
     extern thread_local cerb::msize_t allocated_buffer;
 
+    extern thread_local cerb::Time poll_start;
+    extern cerb::Interval slow_poll_elapse;
+
     void set_remotes(std::set<util::Address> remotes);
     std::set<util::Address> get_remotes();
 
