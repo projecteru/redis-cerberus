@@ -2,6 +2,7 @@
 #define __CERBERUS_UTILITY_ADDRESS_HPP__
 
 #include <string>
+#include <set>
 
 namespace util {
 
@@ -25,6 +26,7 @@ namespace util {
         {}
 
         static Address from_host_port(std::string const& addr);
+        static std::set<util::Address> from_hosts_ports(std::string const& addrs);
 
         Address& operator=(Address const& rhs)
         {

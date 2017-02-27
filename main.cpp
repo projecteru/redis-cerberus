@@ -132,7 +132,7 @@ namespace {
         }
 
         if (config.contains("node")) {
-            cerb_global::set_remotes({util::Address::from_host_port(config.get("node"))});
+            cerb_global::set_remotes(util::Address::from_hosts_ports(config.get("node")));
         } else {
             LOG(WARNING) << "Remote is not set in config file; to set it by command,"
                             " use `SETREMOTES <host> <port>' in a redis-cli prompt";
