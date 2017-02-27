@@ -89,7 +89,7 @@ void Client::_push_awaitings_to_ready()
 {
     if (this->_awaiting_count != 0 || (
             !this->_ready_groups.empty() &&
-            this->_awaiting_groups.size() + this->_ready_groups.empty() > MAX_RESPONSES
+            this->_awaiting_groups.size() + this->_ready_groups.size() > MAX_RESPONSES
         ))
     {
         return;
