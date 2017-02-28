@@ -101,7 +101,10 @@ void Server::pop_client(Client* cli)
             return cmd->group->client.is(cli);
         });
     for (util::sref<DataCommand>& cmd: this->_sent_commands) {
-        if (cmd.not_nul() && cmd->group->client.is(cli)) {
+        if (cmd.not_nul() &&
+            cmd->group.not_nul() &&
+            cmd->group->client.not_nul() &&
+            cmd->group->client.is(cli)) {
             cmd.reset();
         }
     }
