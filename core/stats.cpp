@@ -52,7 +52,7 @@ std::string cerb::stats_all()
                                       res_usage.ru_utime.tv_usec / 1000000.0),
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
         "\ncompleted_commands:", util::str(total_commands),
-        "\ntotal_process_elapse:", util::str(total_cmd_elapse),
+        "\ntotal_commands_elapse:", util::str(total_cmd_elapse),
         "\ntotal_remote_cost:", util::str(total_remote_cost),
         "\nlast_command_elapse:", util::join(",", last_cmd_elapse),
         "\nlast_remote_cost:", util::join(",", last_remote_cost),
