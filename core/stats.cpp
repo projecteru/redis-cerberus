@@ -1,13 +1,25 @@
-#include <sys/resource.h>
-
 #include "stats.hpp"
+
+#include <sys/resource.h>
+#include <iostream>
+
 #include "globals.hpp"
 #include "utils/string.h"
 
 using namespace cerb;
 
 static bool read_slave = false;
+std::atomic<long> cerb::qps(0);
 
+void metrics_check(int signo __attribute__((unused)))
+{
+	long total = cerb::Proxy::cmds_per_sec.exchange(0);
+	qps = total;
+	if (qps != 0)
+		std::cout << "qps=" << qps << std::endl;
+	
+	alarm(1);
+}
 std::string cerb::stats_all()
 {
     struct rusage res_usage;
