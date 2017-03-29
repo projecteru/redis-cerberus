@@ -3,7 +3,7 @@
 
 #include <chrono>
 
-#define VERSION "0.7.10-2017-02-28"
+#define VERSION "0.7.11-2017-03-29"
 
 namespace cerb {
 
