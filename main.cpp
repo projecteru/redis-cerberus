@@ -1,5 +1,5 @@
 #include <unistd.h>
-#include <csignal>
+#include <signal.h>
 #include <map>
 #include <algorithm>
 #include <iostream>
@@ -13,6 +13,8 @@
 #include "utils/address.hpp"
 #include "utils/string.h"
 #include "backtracpp/sig-handler.h"
+
+void metrics_check(int signo);
 
 namespace {
 
@@ -97,7 +99,7 @@ namespace {
     void exit_on_int(int)
     {
         LOG(INFO) << "C-c Exit.";
-        exit(0);
+        _exit(0);
     }
 
     void run(Configuration const& config)
@@ -146,6 +148,8 @@ namespace {
         }
         LOG(INFO) << "Started; listen to port " << bind_port
                   << " thread=" << thread_count;
+		signal(SIGALRM,metrics_check);
+		alarm(1);
         for (auto& t: cerb_global::all_threads) {
             t.join();
         }

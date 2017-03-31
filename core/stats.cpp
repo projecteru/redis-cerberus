@@ -1,13 +1,25 @@
-#include <sys/resource.h>
-
 #include "stats.hpp"
+
+#include <sys/resource.h>
+#include <iostream>
+
 #include "globals.hpp"
 #include "utils/string.h"
 
 using namespace cerb;
 
 static bool read_slave = false;
+std::atomic<long> cerb::qps(0);
 
+void metrics_check(int signo __attribute__((unused)))
+{
+	long total = cerb::Proxy::cmds_per_sec.exchange(0);
+	qps = total;
+	if (qps != 0)
+		std::cout << "qps=" << qps << std::endl;
+	
+	alarm(1);
+}
 std::string cerb::stats_all()
 {
     struct rusage res_usage;
@@ -52,7 +64,7 @@ std::string cerb::stats_all()
                                       res_usage.ru_utime.tv_usec / 1000000.0),
         "\nmem_buffer_alloc:", util::join(",", mem_buffer_allocs),
         "\ncompleted_commands:", util::str(total_commands),
-        "\ntotal_process_elapse:", util::str(total_cmd_elapse),
+        "\ntotal_commands_elapse:", util::str(total_cmd_elapse),
         "\ntotal_remote_cost:", util::str(total_remote_cost),
         "\nlast_command_elapse:", util::join(",", last_cmd_elapse),
         "\nlast_remote_cost:", util::join(",", last_remote_cost),

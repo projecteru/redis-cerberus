@@ -105,6 +105,7 @@ std::string SlotsMapUpdater::str() const
                        static_cast<void const*>(this), this->addr.str());
 }
 
+std::atomic<long> Proxy::cmds_per_sec(0);
 Proxy::Proxy(int listen_port)
     : _clients_count(0)
     , _long_conns_count(0)
@@ -361,6 +362,7 @@ void Proxy::pop_client(Client* cli)
 
 void Proxy::stat_proccessed(Interval cmd_elapse, Interval remote_cost)
 {
+	++cmds_per_sec;
     _total_cmd_elapse += cmd_elapse;
     ++_total_cmd;
     _last_cmd_elapse = cmd_elapse;

@@ -24,7 +24,7 @@ ifdef CANDIDATE_FCTL
 	USE_CANDIDATE_FCTL_LIB=-D_USE_CANDIDATE_FCTL_LIB
 endif
 
-CC=$(COMPILER) -c -std=c++0x -D_XOPEN_SOURCE -DELPP_THREAD_SAFE \
+CC=$(COMPILER) -c -std=c++0x -D_XOPEN_SOURCE -DELPP_THREAD_SAFE -DFMT_HEADER_ONLY \
    $(USE_CANDIDATE_IO_LIB) $(USE_CANDIDATE_POLL_LIB) $(USE_CANDIDATE_FCTL_LIB)
 INCLUDE=-I.
 RESOLVE_DEP=$(COMPILER) -std=c++0x -MM $(INCLUDE)
@@ -35,7 +35,7 @@ CFLAGS=-Wall -Wextra -Wold-style-cast -Werror $(OPT_FLAGS)
 MKTMP := $(shell mktemp)
 
 LIBS_DIR=libs
-LIBS=-L$(LIBS_DIR) -lpthread -lbacktracpp -lcppformat
+LIBS=-L$(LIBS_DIR) -lpthread -lbacktracpp
 WORK_LIBS=$(LIBS)
 TEST_LIBS=-lgtest -lgtest_main $(LIBS)
 

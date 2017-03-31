@@ -2,10 +2,12 @@
 #define __CERBERUS_STATISTICS_HPP__
 
 #include <string>
+#include <atomic>
 
 #include "common.hpp"
 
 namespace cerb {
+	extern std::atomic<long> qps;
 
     std::string stats_all();
     void stats_set_read_slave();

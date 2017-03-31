@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <map>
+#include <atomic>
 
 #include "command.hpp"
 #include "slot_map.hpp"
@@ -90,6 +91,7 @@ namespace cerb {
         void _update_slot_map();
         void _move_closed_slot_updaters();
     public:
+		static std::atomic<long> cmds_per_sec;
         int epfd;
         Acceptor acceptor;
 
