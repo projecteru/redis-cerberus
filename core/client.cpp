@@ -78,7 +78,9 @@ void Client::_send_buffer_set()
             g->collect_stats(this->_proxy);
         }
         this->_ready_groups.clear();
-        this->_peers.clear();
+        if (this->_awaiting_groups.empty()) {
+            this->_peers.clear();
+        }
         if (!this->_parsed_groups.empty()) {
             _process();
         }
