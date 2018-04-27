@@ -7,6 +7,7 @@
 #include "except/exceptions.hpp"
 #include "utils/logging.hpp"
 #include "syscalls/poll.h"
+#include "globals.hpp"
 
 using namespace cerb;
 
@@ -17,6 +18,7 @@ Client::Client(int fd, Proxy* p)
     : ProxyConnection(fd)
     , _proxy(p)
     , _awaiting_count(0)
+    , _auth(false)
 {
     p->poll_add_ro(this);
 }
@@ -192,4 +194,14 @@ void Client::add_peer(Server* svr)
 void Client::push_command(util::sptr<CommandGroup> g)
 {
     this->_parsed_groups.push_back(std::move(g));
+}
+
+bool Client::is_client_auth()
+{
+    return this->_auth || !cerb_global::need_auth();
+}
+
+void Client::set_client_auth(bool ok)
+{
+    this->_auth = ok;
 }

@@ -117,6 +117,11 @@ namespace {
             cerb_global::set_cluster_req_full_cov(false);
         }
 
+        if (config.get("auth", "") != "") {
+            LOG(INFO) << "Proxy set need auth";
+            cerb_global::set_auth_pass(config.get("auth"));
+        }
+
         int slow_poll_ms = util::atoi(config.get("slow-poll-elapse-ms", "50"));
         if (slow_poll_ms <= 0) {
             LOG(ERROR) << "Invalid slow poll elapse";

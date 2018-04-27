@@ -46,3 +46,20 @@ bool cerb_global::cluster_ok()
 {
     return ::cluster_ok;
 }
+
+static std::string auth_pass("");
+
+void cerb_global::set_auth_pass(std::string const& pass)
+{
+	::auth_pass = pass;
+}
+
+bool cerb_global::need_auth() 
+{
+	return ::auth_pass != "";
+}
+
+bool cerb_global::is_auth_ok(std::string const& pass)
+{
+	return ::auth_pass == pass;
+}

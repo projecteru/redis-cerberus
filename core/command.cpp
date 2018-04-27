@@ -20,16 +20,22 @@ using namespace cerb;
 namespace {
 
     std::string const RSP_OK_STR("+OK\r\n");
+    std::string const NOAUTH_RSP("-NOAUTH Authentication required.\r\n");
     std::shared_ptr<Buffer> const RSP_OK(new Buffer(RSP_OK_STR));
 
     Server* select_server_for(Proxy* proxy, DataCommand* cmd, slot key_slot)
     {
+        if (!cmd->group->client->is_client_auth()) {
+            return nullptr;
+        }
+
         Server* svr = proxy->get_server_by_slot(key_slot);
         if (svr == nullptr) {
             LOG(DEBUG) << "Cluster slot not covered " << key_slot;
             proxy->retry_move_ask_command_later(util::mkref(*cmd));
             return nullptr;
         }
+
         svr->push_client_command(util::mkref(*cmd));
         return svr;
     }
@@ -329,11 +335,52 @@ namespace {
 
         util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->msg.empty()) {
                 return util::mkptr(new DirectCommandGroup(c, "+PONG\r\n"));
             }
             return util::mkptr(new DirectCommandGroup(c, fmt::format(
                             "${}\r\n{}\r\n", this->msg.size(), this->msg)));
+        }
+
+        void on_str(Buffer::iterator begin, Buffer::iterator end)
+        {
+            this->msg = std::string(begin, end);
+        }
+    };
+
+    class AuthCommandParser
+        : public SpecialCommandParser
+    {
+        std::string msg;
+    public:
+        AuthCommandParser() = default;
+
+        util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
+        {
+            // 先检查是否设置 proxy auth
+            if (!cerb_global::need_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, "-ERR Client sent AUTH, but no password is set\r\n"));
+            }
+
+            // passwd 为空
+            if (this->msg.empty()) {
+                return util::mkptr(new DirectCommandGroup(c, "-ERR wrong number of arguments for 'auth' command\r\n"));
+            }
+
+            // passwd 与 proxy 设置的不符
+            if (!cerb_global::is_auth_ok(msg)) {
+                // 设置 client
+                c->set_client_auth(false);
+                return util::mkptr(new DirectCommandGroup(c, "-ERR invalid password\r\n"));
+            }
+
+            // 设置 client
+            c->set_client_auth(true);
+            return util::mkptr(new DirectCommandGroup(c, "+OK\r\n"));
         }
 
         void on_str(Buffer::iterator begin, Buffer::iterator end)
@@ -351,6 +398,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             return util::mkptr(new DirectCommandGroup(c, stats_string()));
         }
 
@@ -365,6 +416,10 @@ namespace {
 
         util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             ::notify_each_thread_update_slot_map();
             return util::mkptr(new DirectCommandGroup(c, RSP_OK_STR));
         }
@@ -387,6 +442,10 @@ namespace {
 
         util::sptr<CommandGroup> spawn_commands(util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->bad) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR invalid port number\r\n"));
@@ -448,6 +507,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (keys_slots.empty()) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for '" + this->command_name + "' command\r\n"));
@@ -566,6 +629,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (keys_slots.empty() || !current_is_key) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'mset' command\r\n"));
@@ -680,6 +747,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (slot_index != 2 || this->bad) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'rename' command\r\n"));
@@ -741,6 +812,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->no_arg) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'subscribe' command\r\n"));
@@ -796,6 +871,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->args_count != 2) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR BLPOP/BRPOP takes exactly 2 arguments KEY TIMEOUT in proxy\r\n"));
@@ -840,6 +919,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->arg_count < 3 || this->key_count != 1) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'eval' command\r\n"));
@@ -868,6 +951,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->arg_count != 2) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong number of arguments for 'publish' command\r\n"));
@@ -901,6 +988,10 @@ namespace {
         util::sptr<CommandGroup> spawn_commands(
             util::sref<Client> c, Buffer::iterator end)
         {
+            if (!c->is_client_auth()) {
+                return util::mkptr(new DirectCommandGroup(c, NOAUTH_RSP));
+            }
+
             if (this->_arg_count != 2 || this->_slot >= CLUSTER_SLOT_COUNT) {
                 return util::mkptr(new DirectCommandGroup(
                     c, "-ERR wrong arguments for 'keysinslot' command\r\n"));
@@ -919,6 +1010,11 @@ namespace {
             [](Buffer::iterator, Buffer::iterator) -> CmdPtr
             {
                 return util::mkptr(new PingCommandParser);
+            }},
+        {"AUTH",
+            [](Buffer::iterator, Buffer::iterator) -> CmdPtr
+            {
+                return util::mkptr(new AuthCommandParser);
             }},
         {"INFO",
             [](Buffer::iterator, Buffer::iterator) -> CmdPtr
@@ -1059,16 +1155,31 @@ namespace {
         void on_split_point(Iterator i)
         {
             this->_on_str = ClientCommandSplitter::on_command_head;
+            
             if (this->last_command_is_bad) {
                 this->client->push_command(util::mkptr(new DirectCommandGroup(
                     client, "-ERR Unknown command or command key not specified\r\n")));
-            } else if (this->special_parser.nul()) {
-                this->client->push_command(util::mkptr(new SingleCommandGroup(
-                    client, Buffer(this->last_command_begin, i), this->slot_calc.get_slot())));
-            } else {
-                this->client->push_command(this->special_parser->spawn_commands(this->client, i));
-                this->special_parser.reset();
             }
+
+            if (! this->last_command_is_bad && this->client->is_client_auth()) {
+                if (this->special_parser.nul()) {
+                    this->client->push_command(util::mkptr(new SingleCommandGroup(
+                        client, Buffer(this->last_command_begin, i), this->slot_calc.get_slot())));
+                } else {
+                    this->client->push_command(this->special_parser->spawn_commands(this->client, i));
+                    this->special_parser.reset();
+                }
+            }
+
+            if (! this->last_command_is_bad && ! this->client->is_client_auth()) {
+                if (this->special_parser.nul()) {
+                    this->client->push_command(util::mkptr(new DirectCommandGroup(this->client, NOAUTH_RSP)));
+                } else {
+                    this->client->push_command(this->special_parser->spawn_commands(this->client, i));
+                    this->special_parser.reset();
+                }
+            }
+
             this->last_command_begin = i;
             this->slot_calc.reset();
             this->last_command_is_bad = false;
