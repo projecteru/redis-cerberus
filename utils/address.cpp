@@ -11,7 +11,9 @@ Address Address::from_host_port(std::string const& addr)
     if (host_port.size() != 2) {
         throw std::runtime_error("Invalid address: " + addr);
     }
-    return Address(host_port[0], util::atoi(host_port[1].data()));
+    
+    std::vector<std::string> ports(util::split_str(host_port[1], "@"));
+    return Address(host_port[0], util::atoi(ports[0].data()));
 }
 
 std::set<util::Address> Address::from_hosts_ports(std::string const& addrs)
