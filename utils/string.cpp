@@ -128,5 +128,5 @@ std::string util::join(std::string const& sep, std::vector<std::string> const& v
                       result += sep;
                       result += v;
                   });
-    return std::move(result);
+    return result;
 }
