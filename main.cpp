@@ -11,6 +11,7 @@
 #include "core/server.hpp"
 #include "utils/logging.hpp"
 #include "utils/address.hpp"
+#include "utils/random.hpp"
 #include "utils/string.h"
 #include "backtracpp/sig-handler.h"
 
@@ -89,7 +90,7 @@ namespace {
             try {
                 return _config.at(k);
             } catch (std::out_of_range&) {
-                return std::move(def);
+                return def;
             }
         }
     };
@@ -177,6 +178,7 @@ int main(int argc, char* argv[])
 
     signal(SIGINT, exit_on_int);
     logging::init();
+    util::random_init();
     trac::trace_on_seg_fault();
     trac::trace_on_fpe();
 

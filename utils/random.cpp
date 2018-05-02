@@ -3,13 +3,10 @@
 
 #include "random.hpp"
 
-static int init()
+void util::random_init()
 {
     ::srand(time(nullptr));
-    return 0;
 }
-
-static auto _(init());
 
 int util::randint(int min, int max)
 {

@@ -50,7 +50,7 @@ static std::function<std::set<Server*>(
             removed.begin(), removed.end(), new_mapped.begin(), new_mapped.end(),
             std::inserter(r, r.end()));
         r.erase(nullptr);
-        return std::move(r);
+        return r;
     });
 
 void SlotMap::replace_map(std::vector<RedisNode> const& nodes, Proxy* proxy)
@@ -104,7 +104,7 @@ static RedisNode parse_node(
             node.slot_ranges.insert(
                 std::make_pair(util::atoi(begin_end[0]), util::atoi(begin_end[1])));
         });
-    return std::move(node);
+    return node;
 }
 
 std::vector<RedisNode> cerb::parse_slot_map(std::string const& nodes_info,
@@ -131,7 +131,7 @@ std::vector<RedisNode> cerb::parse_slot_map(std::string const& nodes_info,
             LOG(ERROR) << "Discard invalid line: " << line;
         }
     }
-    return std::move(slot_map);
+    return slot_map;
 }
 
 static std::string const CLUSTER_NODES_CMD("*2\r\n$7\r\ncluster\r\n$5\r\nnodes\r\n");
@@ -185,6 +185,6 @@ void SlotMap::select_slave_if_possible(std::string host_beginning)
                 removed.begin(), removed.end(), new_mapped.begin(), new_mapped.end(),
                 std::inserter(r, r.end()));
             r.erase(nullptr);
-            return std::move(r);
+            return r;
         };
 }

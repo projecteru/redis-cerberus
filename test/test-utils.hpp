@@ -7,7 +7,7 @@ static std::string operator*(std::string const& s, int times)
     while (times --> 0) {
         r += s;
     }
-    return std::move(r);
+    return r;
 }
 
 #endif /* __CERBERUS_TEST_UTILIIES_HPP__ */

@@ -3,6 +3,7 @@
 
 namespace util {
 
+    void random_init();
     int randint(int min, int max);
 
 }
