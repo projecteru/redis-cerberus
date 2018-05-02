@@ -201,6 +201,43 @@ TEST_F(SlotMapTest, ParseMap)
         ASSERT_EQ(12288, slot_ranges[0].first);
         ASSERT_EQ(16383, slot_ranges[0].second);
     }
+
+    // @busport format
+    {
+        std::vector<cerb::RedisNode> nodes(cerb::parse_slot_map(
+            "2d1866134ef5fabdfae0ca9ada4ea169f0e0c3fa 127.0.0.1:7100@17100 myself,master - 0 1508960514000 2 connected 8192-16383\n"
+            "2ec421bd92fec4823e64f963e29792803ce5c13c 127.0.0.1:7102@17102 slave 2d1866134ef5fabdfae0ca9ada4ea169f0e0c3fa 0 1508960516286 2 connected\n"
+            "1739bb3232ef733500888051203b06b704f935a5 127.0.0.1:7101@17101 master - 0 1508960515277 1 connected 0-8191\n",
+            "127.0.0.1"));
+        ASSERT_EQ(3, nodes.size());
+        ASSERT_EQ("127.0.0.1", nodes[0].addr.host);
+        ASSERT_EQ(7100, nodes[0].addr.port);
+        ASSERT_EQ("2d1866134ef5fabdfae0ca9ada4ea169f0e0c3fa", nodes[0].node_id);
+        ASSERT_TRUE(nodes[0].is_master());
+
+        ASSERT_EQ(1, nodes[0].slot_ranges.size());
+        std::vector<std::pair<cerb::slot, cerb::slot>> slot_ranges(
+            nodes[0].slot_ranges.begin(), nodes[0].slot_ranges.end());
+        ASSERT_EQ(8192, slot_ranges[0].first);
+        ASSERT_EQ(16383, slot_ranges[0].second);
+
+        ASSERT_EQ("127.0.0.1", nodes[1].addr.host);
+        ASSERT_EQ(7102, nodes[1].addr.port);
+        ASSERT_EQ("2ec421bd92fec4823e64f963e29792803ce5c13c", nodes[1].node_id);
+        ASSERT_FALSE(nodes[1].is_master());
+        ASSERT_TRUE(nodes[1].slot_ranges.empty());
+
+        ASSERT_EQ("127.0.0.1", nodes[2].addr.host);
+        ASSERT_EQ(7101, nodes[2].addr.port);
+        ASSERT_EQ("1739bb3232ef733500888051203b06b704f935a5", nodes[2].node_id);
+        ASSERT_TRUE(nodes[2].is_master());
+
+        ASSERT_EQ(1, nodes[2].slot_ranges.size());
+        slot_ranges = std::vector<std::pair<cerb::slot, cerb::slot>>(
+            nodes[2].slot_ranges.begin(), nodes[2].slot_ranges.end());
+        ASSERT_EQ(0, slot_ranges[0].first);
+        ASSERT_EQ(8191, slot_ranges[0].second);
+    }
 }
 
 TEST_F(SlotMapTest, ReplaceNodesAllMasters)
