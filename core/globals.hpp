@@ -26,6 +26,9 @@ namespace cerb_global {
     void set_cluster_ok(bool ok);
     bool cluster_ok();
 
+    void set_auth_pass(std::string const& pass);
+    bool need_auth();
+    bool is_auth_ok(std::string const& pass);
 }
 
 #endif /* __CERBERUS_GLOBALS_HPP__ */

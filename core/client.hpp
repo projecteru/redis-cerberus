@@ -25,6 +25,7 @@ namespace cerb {
         int _awaiting_count;
         Buffer _buffer;
         BufferSet _output_buffer_set;
+        bool _auth;
 
         void _process();
         void _send_buffer_set();
@@ -41,6 +42,8 @@ namespace cerb {
         void add_peer(Server* svr);
         void reactivate(util::sref<Command> cmd);
         void push_command(util::sptr<CommandGroup> g);
+        bool is_client_auth();
+        void set_client_auth(bool ok);
     };
 
 }
