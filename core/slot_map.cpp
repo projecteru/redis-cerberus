@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <vector>
 #include <stdexcept>
 #include <cppformat/format.h>
 
