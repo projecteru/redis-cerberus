@@ -56,6 +56,14 @@ The option set via ARGS would override it in the configuration file. For example
 
 set the program to 8 threads.
 
+Docker support
+===
+After being compiled, start a simple setup including connecting a local redis cluster like this:
+
+> docker-compose up -d
+
+Then you can connect the proxy with redis-cli or other redis client tools.
+
 Commands in Particular
 ===
 

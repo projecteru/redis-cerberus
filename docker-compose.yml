@@ -1,0 +1,14 @@
+version: '3'
+services:
+    redis-cluster:
+        image: "grokzen/redis-cluster"
+
+    cerberus:
+        build: .
+        container_name: cerberus
+        ports:
+            - "8889:8889"
+        depends_on:
+            - redis-cluster
+        environment:
+            REDIS_CLUSTER_NODES: redis-cluster:7000
