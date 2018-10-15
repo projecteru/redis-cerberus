@@ -44,16 +44,22 @@ namespace fctl {
 
     inline void connect_fd(std::string const& host, int port, int fd)
     {
-        set_tcpnodelay(fd);
-        struct sockaddr_in serv_addr;
-        ::bzero(&serv_addr, sizeof serv_addr);
-        serv_addr.sin_family = AF_INET;
-        if (::inet_pton(AF_INET, host.c_str(), &serv_addr.sin_addr) != 1) {
-            throw cerb::UnknownHost(host);
-        }
-        serv_addr.sin_port = htons(port);
-        if (::connect(fd, reinterpret_cast<struct sockaddr*>(&serv_addr),
-                      sizeof serv_addr) < 0)
+         set_tcpnodelay(fd);
+
+         struct addrinfo hints;
+         struct addrinfo *res = NULL;
+         char _port[6];
+         snprintf(_port, 6, "%d", port);
+         memset(&hints, 0, sizeof(hints));
+         hints.ai_protocol = IPPROTO_TCP;
+         hints.ai_family = AF_INET;
+         hints.ai_socktype = SOCK_STREAM;
+         if (getaddrinfo(host.c_str(), _port, &hints, &res) != 0) {
+             freeaddrinfo(res);
+             throw cerb::UnknownHost(host);
+         }
+
+        if (::connect(fd, res->ai_addr, res->ai_addrlen) < 0)
         {
             if (errno == EINPROGRESS) {
                 return;
