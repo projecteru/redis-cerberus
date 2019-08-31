@@ -5,6 +5,8 @@
 #include "string.h"
 #include "except/exceptions.hpp"
 
+#include <numeric>
+
 using namespace util;
 
 bool util::strnieq(std::string const& lhs, std::string const& rhs, ssize_type n)

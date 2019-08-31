@@ -3,6 +3,15 @@ A Redis cluster proxy.
 Build
 ===
 
+## changelog
+
+``` bash
+[190831]
+
+*) add higher version g++ support on debian:buster-slim
+*) you should use `make COMPILER=g++` by default
+```
+
 Requirements:
 
 * `make` and `cmake`

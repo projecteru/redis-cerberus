@@ -31,7 +31,7 @@ RESOLVE_DEP=$(COMPILER) -std=c++0x -MM $(INCLUDE)
 LINK=$(COMPILER) -rdynamic
 AR=ar rcs
 
-CFLAGS=-Wall -Wextra -Wold-style-cast -Werror $(OPT_FLAGS)
+CFLAGS=-Wall -Wextra -Wold-style-cast -Werror -Wno-expansion-to-defined $(OPT_FLAGS)
 MKTMP := $(shell mktemp)
 
 LIBS_DIR=libs

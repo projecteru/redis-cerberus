@@ -7,6 +7,8 @@
 #include "common.hpp"
 #include "utils/address.hpp"
 
+#include <vector>
+
 namespace cerb {
 
     class Server;

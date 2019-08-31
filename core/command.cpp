@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cppformat/format.h>
 
+#include <numeric>
+
 #include "message.hpp"
 #include "command.hpp"
 #include "proxy.hpp"
