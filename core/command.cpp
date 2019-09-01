@@ -1,7 +1,6 @@
 #include <algorithm>
-#include <cppformat/format.h>
-
 #include <numeric>
+#include <cppformat/format.h>
 
 #include "message.hpp"
 #include "command.hpp"

@@ -1,11 +1,10 @@
 #include <algorithm>
 #include <sstream>
 #include <stdexcept>
+#include <numeric>
 
 #include "string.h"
 #include "except/exceptions.hpp"
-
-#include <numeric>
 
 using namespace util;
 
